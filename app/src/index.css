@@ -1,0 +1,287 @@
+/* Cleaned up global CSS from the HTML files */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --primary: #34D399;
+  /* using index.html's primary, configure had #10B981 */
+  --primary-hover: #10b981;
+  --primary-glow: rgba(52, 211, 153, 0.25);
+
+  --bg: #000000;
+  --surface: #1C1C1E;
+  --surface-hover: #2C2C2E;
+  --surface2: #2C2C2E;
+
+  --text: #FFFFFF;
+  --text-muted: #9CA3AF;
+  --border: #374151;
+
+  --green-badge-bg: rgba(21, 128, 61, 0.3);
+  --green-badge-text: #4ade80;
+  --green-badge-border: rgba(21, 128, 61, 0.5);
+
+  --blue-icon-bg: rgba(30, 58, 138, 0.3);
+  --blue-icon: #60A5FA;
+
+  --red-icon-bg: rgba(127, 29, 29, 0.3);
+  --red-icon: #F87171;
+
+  --font-display: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  --radius: 16px;
+  --radius-sm: 12px;
+  --radius-xl: 20px;
+}
+
+body {
+  font-family: var(--font-display);
+  background-color: var(--bg);
+  color: var(--text);
+  min-height: max(884px, 100dvh);
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: 88px;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+button {
+  font-family: inherit;
+  border: none;
+  cursor: pointer;
+  outline: none;
+  background: transparent;
+}
+
+/* Base utility classes used across files */
+.flex {
+  display: flex;
+}
+
+.flex-col {
+  flex-direction: column;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.items-start {
+  align-items: flex-start;
+}
+
+.items-end {
+  align-items: flex-end;
+}
+
+.justify-between {
+  justify-content: space-between;
+}
+
+.justify-center {
+  justify-content: center;
+}
+
+.justify-around {
+  justify-content: space-around;
+}
+
+.space-x-2>*+* {
+  margin-left: 0.5rem;
+}
+
+.space-x-4>*+* {
+  margin-left: 1rem;
+}
+
+.space-y-1>*+* {
+  margin-top: 0.25rem;
+}
+
+.space-y-2>*+* {
+  margin-top: 0.5rem;
+}
+
+.space-y-4>*+* {
+  margin-top: 1rem;
+}
+
+.space-y-8>*+* {
+  margin-top: 2rem;
+}
+
+.w-full {
+  width: 100%;
+}
+
+.h-full {
+  height: 100%;
+}
+
+.gap-1 {
+  gap: 0.25rem;
+}
+
+.gap-2 {
+  gap: 0.5rem;
+}
+
+.gap-3 {
+  gap: 0.75rem;
+}
+
+.gap-4 {
+  gap: 1rem;
+}
+
+.text-center {
+  text-align: center;
+}
+
+/* Global Header Styles */
+.header {
+  padding: 1rem 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header h1 {
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 0.5rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-btn:hover {
+  background-color: var(--surface);
+}
+
+/* Global Bottom Navigation Styles */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: var(--bg);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 50;
+  height: 4rem;
+}
+
+.nav-inner {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  height: 100%;
+}
+
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-muted);
+  transition: color 0.2s;
+}
+
+.nav-item:hover,
+.nav-item.active {
+  color: var(--primary);
+}
+
+.nav-icon {
+  margin-bottom: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-label {
+  font-size: 0.625rem;
+  font-weight: 500;
+}
+
+/* Floating Action Button */
+.fab-container {
+  position: fixed;
+  bottom: 6rem;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.fab {
+  background-color: var(--primary);
+  color: #000;
+  border: none;
+  border-radius: 9999px;
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 10px 15px -3px rgba(52, 211, 153, 0.3), 0 4px 6px -2px rgba(52, 211, 153, 0.15);
+  transition: transform 0.1s, background-color 0.2s;
+  text-decoration: none;
+}
+
+.fab:hover {
+  background-color: var(--primary-hover);
+  transform: scale(1.05);
+}
+
+.fab:active {
+  transform: scale(0.95);
+}
+
+.fab.bottom-right {
+  bottom: 88px;
+  left: auto;
+  right: 1.5rem;
+  width: 3.5rem;
+  height: 3.5rem;
+  padding: 0;
+}
