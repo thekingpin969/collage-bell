@@ -78,6 +78,24 @@ void patternStartManual(uint8_t durationSec) {
     DEBUG_PRINTF("[PATTERN] Manual ring for %d sec\n", durationSec);
 }
 
+void patternStartTest(const BellTime& testBell) {
+    if (_running) return;
+
+    _manualBell = testBell;
+    _useManual  = true;
+    _stepIdx    = 0;
+    _running    = true;
+    _stepStartMs = millis();
+    
+    // Only turn on the relay if the first step has a duration > 0 
+    // Usually step.duration is guaranteed to be >= 1 by web API, but just to be safe.
+    if (_manualBell.stepCount > 0 && _manualBell.steps[0].duration > 0) {
+        relayON();
+    }
+    
+    DEBUG_PRINTF("[PATTERN] Testing pattern (%d steps)\n", testBell.stepCount);
+}
+
 void patternLoop() {
     if (!_running) return;
 

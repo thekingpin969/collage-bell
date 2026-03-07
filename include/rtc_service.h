@@ -21,9 +21,10 @@ bool rtcInit();
  * @brief Read current time from the RTC.
  * @param[out] hour   Current hour   (0–23)
  * @param[out] minute Current minute (0–59)
- * @param[out] second Current second (0–59)
+ * @param second Reference to store current second (0-59)
+ * @param dayOfWeek Reference to store current day of the week (0=Sun..6=Sat)
  */
-void rtcGetTime(uint8_t &hour, uint8_t &minute, uint8_t &second);
+void rtcGetTime(uint8_t &hour, uint8_t &minute, uint8_t &second, uint8_t &dayOfWeek);
 
 /**
  * @brief Set the RTC to a specific date/time (admin request).

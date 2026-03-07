@@ -1,114 +1,296 @@
 import { h } from 'preact';
-import { useState } from 'preact/hooks';
+import { useState, useContext, useEffect, useRef } from 'preact/hooks';
 import { Link, RouterContext } from '../router';
-import { useContext } from 'preact/hooks';
+import { api } from '../api';
+import './Configure.css';
 
 export const Configure = () => {
-  const { push } = useContext(RouterContext);
-  const [hour, setHour] = useState(8);
-  const [minute, setMinute] = useState(30);
-  const [stepCount, setStepCount] = useState(1);
-  const [steps, setSteps] = useState([
-      { on: 3, pause: 1 },
-      { on: 0, pause: 0 },
-      { on: 0, pause: 0 },
-      { on: 0, pause: 0 },
-      { on: 0, pause: 0 }
-  ]);
+    const { push } = useContext(RouterContext);
+    const [hour, setHour] = useState(11);
+    const [minute, setMinute] = useState(30);
+    const [isAm, setIsAm] = useState(true);
+    const [stepCount, setStepCount] = useState(1);
+    const [steps, setSteps] = useState([
+        { on: 5, pause: 2 },
+        { on: 3, pause: 0 },
+        { on: 0, pause: 0 },
+        { on: 0, pause: 0 },
+        { on: 0, pause: 0 }
+    ]);
+    const [label, setLabel] = useState('Bell Schedule');
+    const [days, setDays] = useState([false, true, true, true, true, true, false]);
+    const [enabled, setEnabled] = useState(true);
+    const [editIdx, setEditIdx] = useState(null);
 
-  const stepNum = (setter, val, delta, min, max) => {
-    let newVal = val + delta;
-    if (newVal < min) newVal = min;
-    if (newVal > max) newVal = max;
-    setter(newVal);
-  };
+    const hourScrollRef = useRef(null);
+    const minScrollRef = useRef(null);
+    const scrollTimeout = useRef(null);
 
-  const updateStep = (index, field, value) => {
-      const newSteps = [...steps];
-      let val = parseInt(value, 10);
-      if (isNaN(val)) val = 0;
-      newSteps[index][field] = val;
-      setSteps(newSteps);
-  };
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const editIdxParam = params.get('edit');
 
-  const handleSubmit = (e) => {
-      e.preventDefault();
-      // handle logic
-      push('/schedules');
-  };
+        if (editIdxParam !== null) {
+            setEditIdx(parseInt(editIdxParam, 10));
+            api.getSchedules().then(data => {
+                const sched = data[parseInt(editIdxParam, 10)];
+                if (sched) {
+                    let h12 = sched.hour % 12 || 12;
+                    setHour(h12);
+                    setMinute(sched.minute);
+                    setIsAm(sched.hour < 12);
+                    setStepCount(sched.stepCount);
+                    if (sched.steps && sched.steps.length > 0) {
+                        const newSteps = [...steps];
+                        sched.steps.forEach((s, i) => {
+                            if (i < 5) newSteps[i] = { on: s.duration, pause: s.delay };
+                        });
+                        setSteps(newSteps);
+                    }
+                    if (sched.label !== undefined) setLabel(sched.label);
+                    if (sched.days !== undefined) {
+                        const newDays = [...days];
+                        for(let i=0; i<7; i++) {
+                            newDays[i] = (sched.days & (1 << i)) !== 0;
+                        }
+                        setDays(newDays);
+                    }
+                    if (sched.enabled !== undefined) setEnabled(sched.enabled);
+                    
+                    setTimeout(() => {
+                        if (hourScrollRef.current) hourScrollRef.current.scrollTop = (h12 - 1) * 48;
+                        if (minScrollRef.current) minScrollRef.current.scrollTop = sched.minute * 48;
+                    }, 50);
+                }
+            }).catch(console.error);
+        } else {
+            setTimeout(() => {
+                if (hourScrollRef.current) hourScrollRef.current.scrollTop = (hour - 1) * 48;
+                if (minScrollRef.current) minScrollRef.current.scrollTop = minute * 48;
+            }, 50);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
-  return (
-    <div class="app-container" style={{ background: '#0B0B0B', paddingBottom: '140px' }}>
-      <header class="header" style={{ position: 'sticky', top: 0, background: '#0B0B0B', zIndex: 10, padding: '48px 16px 16px' }}>
-        <Link to="/schedules" class="icon-btn text-primary" aria-label="Close" style={{ fontSize: '22px' }}>&#x2715;</Link>
-        <h1 style={{ fontSize: '20px', fontWeight: 600 }}>New Schedule</h1>
-        <div style={{ width: '40px' }}></div>
-      </header>
 
-      <main class="w-full max-w-sm mx-auto px-4" style={{ overflowY: 'auto' }}>
-        <form onSubmit={handleSubmit}>
-            {/* Time Picker */}
-            <div class="flex justify-center items-center py-8">
-                <div class="flex flex-col items-center">
-                    <button type="button" class="scroll-arrow" style={{ fontSize: '28px', color: '#9CA3AF', opacity: 0.5 }} onClick={() => stepNum(setHour, hour, 1, 0, 23)}>&#x25B2;</button>
-                    <input class="time-input" type="number" min="0" max="23" value={hour} onInput={e => setHour(parseInt(e.target.value) || 0)} required />
-                    <button type="button" class="scroll-arrow" style={{ fontSize: '28px', color: '#9CA3AF', opacity: 0.5 }} onClick={() => stepNum(setHour, hour, -1, 0, 23)}>&#x25BC;</button>
-                </div>
-                <span class="time-sep" style={{ fontSize: '52px', fontWeight: 300, padding: '0 6px 18px' }}>:</span>
-                <div class="flex flex-col items-center">
-                    <button type="button" class="scroll-arrow" style={{ fontSize: '28px', color: '#9CA3AF', opacity: 0.5 }} onClick={() => stepNum(setMinute, minute, 1, 0, 59)}>&#x25B2;</button>
-                    <input class="time-input" type="number" min="0" max="59" value={minute} onInput={e => setMinute(parseInt(e.target.value) || 0)} required />
-                    <button type="button" class="scroll-arrow" style={{ fontSize: '28px', color: '#9CA3AF', opacity: 0.5 }} onClick={() => stepNum(setMinute, minute, -1, 0, 59)}>&#x25BC;</button>
-                </div>
-            </div>
+    const handleScroll = (e, setter, maxVal, isHour) => {
+        if (!e.target) return;
+        const idx = Math.round(e.target.scrollTop / 48);
+        let val = isHour ? idx + 1 : idx;
+        if (val > maxVal) val = maxVal;
+        
+        setter((prev) => {
+            if (prev !== val) {
+                if (navigator.vibrate) navigator.vibrate(5);
+                return val;
+            }
+            return prev;
+        });
+    };
 
-            {/* Details */}
-            <div class="mb-6">
-                <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Details</div>
-                <div class="bg-surface rounded-2xl overflow-hidden border border-border">
-                    <div class="flex justify-between items-center p-4">
-                        <div>
-                            <div class="text-base font-medium">Number of Steps</div>
-                            <div class="text-sm text-gray-400 mt-1">Ring cycles (1–5)</div>
-                        </div>
-                        <input class="num-input bg-surface2 border border-border rounded-lg text-center font-bold text-base p-2 w-16 outline-none" type="number" min="1" max="5" value={stepCount} onInput={e => setStepCount(parseInt(e.target.value) || 1)} />
-                    </div>
-                </div>
-            </div>
+    const updateStep = (index, field, value) => {
+        const newSteps = [...steps];
+        let val = parseInt(value, 10);
+        if (isNaN(val)) val = 0;
+        newSteps[index][field] = val;
+        setSteps(newSteps);
+    };
 
-            {/* Pattern Builder */}
-            <div class="mb-6">
-                <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Pattern Builder</div>
+    const [saving, setSaving] = useState(false);
 
-                {steps.map((step, idx) => (
-                    <div key={idx} class={`bg-surface rounded-xl p-3 flex items-center gap-3 border border-border mb-2 ${idx >= stepCount ? 'opacity-50' : ''}`} style={idx >= stepCount ? { opacity: 0.5 } : {}}>
-                        <div class="w-8 h-8 rounded-full bg-primary-glow text-primary font-bold text-sm flex items-center justify-center shrink-0" style={{ background: 'rgba(52, 211, 153, 0.15)' }}>
-                            {idx + 1}
-                        </div>
-                        <div class="flex-1 grid grid-cols-2 gap-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                            <div>
-                                <label class="block text-xs uppercase text-gray-400 mb-1" style={{ fontSize: '10px' }}>ON (sec)</label>
-                                <input class="w-full bg-transparent border border-border rounded text-center font-mono py-1 px-2 outline-none" style={{ background: 'rgba(255,255,255,0.06)' }} type="number" min="0" max="255" value={step.on} onInput={e => updateStep(idx, 'on', e.target.value)} />
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        setSaving(true);
+        // Convert 12h AM/PM to 24h for ESP32
+        let h24 = hour;
+        if (isAm && h24 === 12) h24 = 0;
+        if (!isAm && h24 !== 12) h24 += 12;
+
+        const daysMask = days.reduce((mask, isTrue, i) => mask | (isTrue ? (1 << i) : 0), 0);
+        const data = {
+            hour: h24,
+            minute: minute,
+            stepCount: stepCount,
+            label: label,
+            days: daysMask,
+            enabled: enabled,
+            steps: steps.slice(0, stepCount).map(s => ({ duration: s.on, delay: s.pause }))
+        };
+
+        const apiCall = editIdx !== null 
+            ? api.editSchedule(editIdx, data) 
+            : api.addSchedule(data);
+
+        apiCall
+            .then(() => push('/schedules'))
+            .catch(() => alert('Failed to save schedule'))
+            .finally(() => setSaving(false));
+    };
+
+    const formatTime = (time) => time < 10 ? `0${time}` : time;
+
+    const totalTimePattern = steps.slice(0, stepCount).reduce((acc, step) => acc + step.on + step.pause, 0);
+
+    return (
+        <div class="cfg-container">
+            <header class="cfg-header">
+                <Link to="/schedules" aria-label="Close" class="cfg-icon-btn left">
+                    <span class="cfg-icon-primary">✕</span>
+                </Link>
+                <h1>{editIdx !== null ? 'Edit Schedule' : 'New Schedule'}</h1>
+                <button type="button" aria-label="More options" class="cfg-icon-btn right">
+                    <span class="cfg-icon-primary">⋮</span>
+                </button>
+            </header>
+
+            <main class="cfg-main">
+                <form onSubmit={handleSubmit}>
+                    <div class="cfg-time-section">
+                        <div class="cfg-time-row">
+                            <div class="cfg-scroll-picker" ref={hourScrollRef} onScroll={(e) => handleScroll(e, setHour, 12, true)}>
+                                <div style={{height: '48px'}}></div>
+                                {[...Array(12)].map((_, i) => (
+                                    <div key={i} class={`cfg-scroll-item ${hour === i + 1 ? 'active' : ''}`} onClick={() => { setHour(i + 1); if (hourScrollRef.current) hourScrollRef.current.scrollTop = i * 48; }}>
+                                        {formatTime(i + 1)}
+                                    </div>
+                                ))}
+                                <div style={{height: '48px'}}></div>
                             </div>
-                            <div>
-                                <label class="block text-xs uppercase text-gray-400 mb-1" style={{ fontSize: '10px' }}>PAUSE (sec)</label>
-                                <input class="w-full bg-transparent border border-border rounded text-center font-mono py-1 px-2 outline-none" style={{ background: 'rgba(255,255,255,0.06)' }} type="number" min="0" max="255" value={step.pause} onInput={e => updateStep(idx, 'pause', e.target.value)} />
+                            
+                            <span class="cfg-time-colon">:</span>
+                            
+                            <div class="cfg-scroll-picker" ref={minScrollRef} onScroll={(e) => handleScroll(e, setMinute, 59, false)}>
+                                <div style={{height: '48px'}}></div>
+                                {[...Array(60)].map((_, i) => (
+                                    <div key={i} class={`cfg-scroll-item ${minute === i ? 'active' : ''}`} onClick={() => { setMinute(i); if (minScrollRef.current) minScrollRef.current.scrollTop = i * 48; }}>
+                                        {formatTime(i)}
+                                    </div>
+                                ))}
+                                <div style={{height: '48px'}}></div>
+                            </div>
+
+                            <div class="cfg-ampm-col">
+                                <button type="button" class={`cfg-ampm-btn ${isAm ? 'active' : ''}`} onClick={() => setIsAm(true)}>AM</button>
+                                <button type="button" class={`cfg-ampm-btn ${!isAm ? 'active' : ''}`} onClick={() => setIsAm(false)}>PM</button>
                             </div>
                         </div>
                     </div>
-                ))}
 
-                <p class="text-xs text-gray-400 italic p-1">&#8505; Steps with 0 ON time are skipped by the scheduler.</p>
-            </div>
+                    <div class="cfg-section">
+                        <h2 class="cfg-section-title">Details</h2>
+                        <div class="cfg-card" onClick={(e) => {
+                            if (e.target.tagName !== 'INPUT') {
+                                const input = e.currentTarget.querySelector('input');
+                                if (input) input.focus();
+                            }
+                        }}>
+                            <div class="cfg-card-content" style={{width: '100%'}}>
+                                <span class="cfg-card-title">Label</span>
+                                <input 
+                                    type="text" 
+                                    class="cfg-card-subtitle" 
+                                    value={label} 
+                                    onInput={e => setLabel(e.target.value)}
+                                    style={{background: 'transparent', border: 'none', color: 'var(--cfg-text-muted-dark)', width: '100%', outline: 'none', padding: 0, fontSize: '0.875rem'}}
+                                    placeholder="Bell Schedule"
+                                />
+                            </div>
+                            <span class="cfg-card-icon" style={{marginLeft: '0.5rem'}}>✎</span>
+                        </div>
+                        <div class="cfg-card" style={{flexDirection: 'column', alignItems: 'flex-start', gap: '1rem', cursor: 'default'}}>
+                            <div style={{display: 'flex', justifyContent: 'space-between', width: '100%'}}>
+                                <span class="cfg-card-title">Repeat Days</span>
+                            </div>
+                            <div style={{display: 'flex', justifyContent: 'space-between', width: '100%', gap: '0.25rem'}}>
+                                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                                    <button
+                                        key={i}
+                                        type="button"
+                                        class={`cfg-day-btn ${days[i] ? 'active' : ''}`}
+                                        onClick={() => {
+                                            const newDays = [...days];
+                                            newDays[i] = !newDays[i];
+                                            setDays(newDays);
+                                        }}
+                                    >
+                                        {d}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div class="cfg-card" style={{cursor: 'default'}}>
+                            <span class="cfg-card-title">Enable Schedule</span>
+                            <label class="cfg-toggle-label">
+                                <input type="checkbox" class="cfg-toggle-input" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
+                                <div class="cfg-toggle-bg"></div>
+                            </label>
+                        </div>
+                    </div>
 
-            <div class="fixed bottom-0 left-0 right-0 p-4 z-50" style={{ background: 'rgba(11, 11, 11, 0.95)', backdropFilter: 'blur(12px)' }}>
-                <div class="flex gap-3 max-w-sm mx-auto">
-                    <Link to="/schedules" class="flex-1 text-center py-3 rounded-full font-bold border border-border bg-surface">Cancel</Link>
-                    <button type="submit" class="flex-1 text-center py-3 rounded-full font-bold bg-primary text-black" style={{ boxShadow: '0 4px 16px rgba(52, 211, 153, 0.3)' }}>Save Schedule</button>
+                    <div class="cfg-section">
+                        <div class="cfg-pattern-header">
+                            <h2 class="cfg-section-title" style={{marginLeft: 0}}>Pattern Builder</h2>
+                            <button type="button" class="cfg-add-btn" onClick={() => setStepCount(Math.min(5, stepCount + 1))}>
+                                <span class="cfg-add-icon">＋</span> Add Step
+                            </button>
+                        </div>
+                        
+                        <div class="cfg-step-list">
+                            {steps.slice(0, stepCount).map((step, idx) => (
+                                <div key={idx} class="cfg-step-card">
+                                    <div class="cfg-step-index">{idx + 1}</div>
+                                    <div class="cfg-step-grid">
+                                        <div class="cfg-step-input-group">
+                                            <span class="cfg-step-label">ON</span>
+                                            <div class="cfg-step-val">
+                                                <input class="cfg-step-num-input" type="number" min="0" max="255" value={step.on} onInput={(e) => updateStep(idx, 'on', e.target.value)} />s
+                                            </div>
+                                        </div>
+                                        <div class="cfg-step-input-group">
+                                            <span class="cfg-step-label">PAUSE</span>
+                                            <div class="cfg-step-val">
+                                                <input class="cfg-step-num-input" type="number" min="0" max="255" value={step.pause} onInput={(e) => updateStep(idx, 'pause', e.target.value)} />s
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="cfg-step-remove-btn" aria-label="Remove step" onClick={() => setStepCount(Math.max(1, stepCount - 1))}>
+                                        <span class="cfg-step-remove-icon">⛔</span>
+                                    </button>
+                                </div>
+                            ))}
+                            
+                            <div class="cfg-preview-container">
+                                <p class="cfg-preview-text">Pattern Preview (Total: {totalTimePattern}s)</p>
+                                <div class="cfg-preview-bar">
+                                    {totalTimePattern > 0 ? steps.slice(0, stepCount).map((step, idx) => (
+                                        <>
+                                            {step.on > 0 && <div class="cfg-preview-fill on" style={{width: `${(step.on / totalTimePattern) * 100}%`}}></div>}
+                                            {step.pause > 0 && <div class="cfg-preview-fill pause" style={{width: `${(step.pause / totalTimePattern) * 100}%`}}></div>}
+                                        </>
+                                    )) : <div class="cfg-preview-fill pause" style={{width: '100%'}}></div>}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </main>
+
+            <div class="cfg-footer">
+                <div class="cfg-footer-btns">
+                    <button type="button" class="cfg-btn cfg-btn-secondary" onClick={() => {
+                        api.testPattern({
+                            stepCount: stepCount,
+                            steps: steps.slice(0, stepCount).map(s => ({ duration: s.on, delay: s.pause }))
+                        }).catch(() => alert('Test pattern failed'));
+                    }}>
+                        <span class="cfg-play-icon">▶</span> Test
+                    </button>
+                    <button onClick={handleSubmit} type="button" class="cfg-btn cfg-btn-primary" disabled={saving}>
+                        {saving ? 'Saving...' : 'Save'}
+                    </button>
                 </div>
             </div>
-        </form>
-      </main>
-    </div>
-  );
+        </div>
+    );
 };
+

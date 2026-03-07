@@ -6,4 +6,9 @@
 
 stitch
 test
-data
+# data
+build_err.txt
+espn_preact_setup_guide.md
+app/build_log.txt
+app/build_output.txt
+app/package-lock.json

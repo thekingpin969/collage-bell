@@ -27,11 +27,12 @@ bool rtcInit() {
     return true;
 }
 
-void rtcGetTime(uint8_t &hour, uint8_t &minute, uint8_t &second) {
+void rtcGetTime(uint8_t &hour, uint8_t &minute, uint8_t &second, uint8_t &dayOfWeek) {
     DateTime now = _rtc.now();
     hour   = now.hour();
     minute = now.minute();
     second = now.second();
+    dayOfWeek = now.dayOfTheWeek();
 }
 
 bool rtcSetTime(uint16_t year, uint8_t month, uint8_t day,

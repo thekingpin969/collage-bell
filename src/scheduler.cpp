@@ -38,8 +38,8 @@ void schedulerLoop() {
     if (_schedules == nullptr || _scheduleCount == nullptr) return;
 
     // Read current time from RTC
-    uint8_t curHour, curMinute, curSecond;
-    rtcGetTime(curHour, curMinute, curSecond);
+    uint8_t curHour, curMinute, curSecond, curDow;
+    rtcGetTime(curHour, curMinute, curSecond, curDow);
 
     // Only trigger on second 0 for precise timing
     // (avoids multiple triggers within the same minute)
@@ -59,7 +59,9 @@ void schedulerLoop() {
 
     // Check all schedules
     for (uint8_t i = 0; i < *_scheduleCount; i++) {
-        if (_schedules[i].hour   == curHour &&
+        if (_schedules[i].enabled &&
+            (_schedules[i].days & (1 << curDow)) &&
+            _schedules[i].hour   == curHour &&
             _schedules[i].minute == curMinute) {
 
             // Prevent double-trigger in the same minute

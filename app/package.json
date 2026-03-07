@@ -12,6 +12,7 @@
     "preact": "^10.27.2"
   },
   "devDependencies": {
+    "@ikoz/vite-plugin-preact-esp32": "^0.1.0",
     "@preact/preset-vite": "^2.10.2",
     "vite": "^7.3.1"
   }

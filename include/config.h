@@ -66,6 +66,9 @@ struct BellTime {
     uint8_t hour;                   // 0–23
     uint8_t minute;                 // 0–59
     uint8_t stepCount;              // Number of active steps (1–MAX_STEPS)
+    uint8_t days;                   // Bitmask for days (0:Sun, 1:Mon, ..., 6:Sat)
+    bool enabled;                   // Is schedule active
+    char label[16];                 // Optional label (max 15 chars)
     PatternStep steps[MAX_STEPS];   // Ring pattern for this schedule
 };
 

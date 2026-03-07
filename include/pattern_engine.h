@@ -33,6 +33,12 @@ void patternStart(uint8_t scheduleIndex);
 void patternStartManual(uint8_t durationSec);
 
 /**
+ * @brief Test a custom bell pattern without saving it.
+ * @param[in] testBell The BellTime structure containing the pattern to test.
+ */
+void patternStartTest(const BellTime& testBell);
+
+/**
  * @brief Advance the pattern state machine. Call every loop().
  * Uses millis() to track elapsed time – never blocks.
  */

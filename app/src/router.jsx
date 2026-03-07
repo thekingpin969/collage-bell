@@ -17,7 +17,7 @@ export const Router = ({ children }) => {
 
   const push = (newPath) => {
     window.history.pushState({}, '', newPath);
-    setPath(newPath);
+    setPath(newPath.split('?')[0]);
   };
 
   return (
@@ -42,7 +42,7 @@ export const Link = ({ to, children, className, ...props }) => {
 
   // Compute active state directly and conditionally apply active class if it's there
   let computedClassName = className || '';
-  if (path === to && className && className.includes('nav-item')) {
+  if (path.split('?')[0] === to && className && className.includes('nav-item')) {
       computedClassName += ' active';
   }
 

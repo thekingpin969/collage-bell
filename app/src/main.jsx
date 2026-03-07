@@ -1,13 +1,13 @@
 import { render } from 'preact';
 import { Router, Route } from './router';
 import './index.css';
+import { Dashboard } from "./pages/Dashboard"
+import { Schedules } from "./pages/Schedules"
+import { Configure } from "./pages/Configure"
+import { Settings } from "./pages/Settings"
+import { Maintenance } from "./pages/Maintenance"
 
-// Placeholder components for pages
-const Dashboard = () => <div>Dashboard Page</div>;
-const Schedules = () => <div>Schedules Page</div>;
-const Configure = () => <div>Configure Page</div>;
-const Settings = () => <div>Settings Page</div>;
-const Maintenance = () => <div>Maintenance Page</div>;
+
 
 export function App() {
   return (

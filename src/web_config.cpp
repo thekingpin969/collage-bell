@@ -1,21 +1,24 @@
 /**
  * @file web_config.cpp
- * @brief Web Config Service – LittleFS-based UI
+ * @brief Web Config Service – SPA from static_files.h + JSON API
  *
- * Serves the redesigned Tailwind CSS pages from the /data folder
- * using LittleFS. Dynamic placeholders are replaced on-the-fly
- * before streaming the file to the client.
+ * Serves the compiled Preact SPA from static_files.h (gzip-compressed)
+ * and exposes JSON API endpoints for the SPA to communicate with.
  *
- * Endpoints:
- *   GET  /            → Dashboard (index.html)
- *   GET  /schedules   → Schedule list (schedules.html)
- *   GET  /configure   → Add schedule form (configure.html)
- *   GET  /settings    → RTC settings (settings.html)
- *   GET  /maintenance → System info (maintenance.html)
- *   POST /add         → Add a new schedule
- *   GET  /delete      → Delete a schedule by index
- *   POST /ring        → Manual ring
- *   POST /set-time    → Set RTC time
+ * Static SPA routes (from vite-plugin-preact-esp32):
+ *   All files in static_files::files[] are served with Content-Encoding: gzip
+ *   GET / → index.html (SPA entry point)
+ *   Any unknown route → index.html (SPA client-side routing fallback)
+ *
+ * JSON API endpoints:
+ *   GET  /api/status     → System status (time, date, next bell, schedule count)
+ *   GET  /api/schedules  → All schedules as JSON array
+ *   POST /api/schedules  → Add a new schedule (JSON body)
+ *   DELETE /api/schedules→ Delete schedule by ?idx=N
+ *   POST /api/ring       → Trigger manual ring
+ *   POST /api/set-time   → Set RTC time (JSON body)
+ *   GET  /api/system     → System info (uptime, heap)
+ *   GET  /api/logs       → Recent log entries
  */
 
 #include "web_config.h"
@@ -24,22 +27,8 @@
 #include "pattern_engine.h"
 #include <WiFi.h>
 #include <WebServer.h>
-#include <FS.h>
-
-// LittleFS support: works on ESP32 Arduino core 2.x+
-#ifdef ESP_ARDUINO_VERSION_MAJOR
-  #if ESP_ARDUINO_VERSION_MAJOR >= 2
-    #include <LittleFS.h>
-    #define FILESYSTEM LittleFS
-  #else
-    #include <SPIFFS.h>
-    #define FILESYSTEM SPIFFS
-    #warning "Using SPIFFS – upgrade ESP32 core to 2.x for LittleFS support"
-  #endif
-#else
-  #include <LittleFS.h>
-  #define FILESYSTEM LittleFS
-#endif
+#include <pgmspace.h>
+#include "static_files.h"
 
 // ---- Module-private state ----
 static WebServer   _server(WEB_SERVER_PORT);
@@ -47,48 +36,106 @@ static BellTime*   _schedules     = nullptr;
 static uint8_t*    _scheduleCount = nullptr;
 
 // ============================================================
-// HELPER – read an HTML file from FILESYSTEM, do placeholder
-// substitution and stream to client.
+// HELPER – Send CORS headers on all API responses
 // ============================================================
-static void sendPage(const char* path) {
-    if (!FILESYSTEM.exists(path)) {
-        _server.send(404, "text/plain", "Page not found. Please upload data/ files via: pio run -t uploadfs");
-        return;
+static void sendCorsHeaders() {
+    _server.sendHeader("Access-Control-Allow-Origin", "*");
+    _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    _server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+// ============================================================
+// HELPER – Simple JSON string escaping (for safety)
+// ============================================================
+static String jsonStr(const String& s) {
+    String out = "\"";
+    out += s;
+    out += "\"";
+    return out;
+}
+
+// ============================================================
+// HELPER – Parse a simple JSON value by key from body string
+// Supports integer values only. Returns defaultVal if not found.
+// ============================================================
+static int jsonParseInt(const String& body, const char* key, int defaultVal = 0) {
+    String search = String("\"") + key + "\"";
+    int idx = body.indexOf(search);
+    if (idx < 0) return defaultVal;
+    idx = body.indexOf(':', idx);
+    if (idx < 0) return defaultVal;
+    idx++;
+    // Skip whitespace
+    while (idx < (int)body.length() && (body[idx] == ' ' || body[idx] == '\t')) idx++;
+    return body.substring(idx).toInt();
+}
+
+static String jsonParseString(const String& body, const char* key, const String& defaultVal = "") {
+    String search = String("\"") + key + "\":\"";
+    int start = body.indexOf(search);
+    if (start < 0) return defaultVal;
+    start += search.length();
+    int end = body.indexOf('\"', start);
+    if (end < 0) return defaultVal;
+    return body.substring(start, end);
+}
+
+static bool jsonParseBool(const String& body, const char* key, bool defaultVal = false) {
+    String search = String("\"") + key + "\":";
+    int idx = body.indexOf(search);
+    if (idx < 0) return defaultVal;
+    idx += search.length();
+    while (idx < (int)body.length() && (body[idx] == ' ' || body[idx] == '\t')) idx++;
+    if (body.substring(idx).startsWith("true")) return true;
+    if (body.substring(idx).startsWith("false")) return false;
+    return defaultVal;
+}
+
+// ============================================================
+// HELPER – Parse steps array from JSON body
+// Format: "steps":[{"duration":3,"delay":1},...]
+// ============================================================
+static uint8_t jsonParseSteps(const String& body, PatternStep* steps, uint8_t maxSteps) {
+    int stepsIdx = body.indexOf("\"steps\"");
+    if (stepsIdx < 0) return 0;
+    int arrStart = body.indexOf('[', stepsIdx);
+    if (arrStart < 0) return 0;
+    int arrEnd = body.indexOf(']', arrStart);
+    if (arrEnd < 0) return 0;
+
+    String arr = body.substring(arrStart, arrEnd + 1);
+    uint8_t count = 0;
+    int pos = 0;
+    while (count < maxSteps) {
+        int objStart = arr.indexOf('{', pos);
+        if (objStart < 0) break;
+        int objEnd = arr.indexOf('}', objStart);
+        if (objEnd < 0) break;
+        String obj = arr.substring(objStart, objEnd + 1);
+
+        steps[count].duration = (uint8_t)jsonParseInt(obj, "duration", 1);
+        steps[count].delay    = (uint8_t)jsonParseInt(obj, "delay", 0);
+        count++;
+        pos = objEnd + 1;
     }
+    return count;
+}
 
-    File f = FILESYSTEM.open(path, "r");
-    if (!f) {
-        _server.send(500, "text/plain", "Failed to open file");
-        return;
-    }
+// ============================================================
+// API HANDLERS
+// ============================================================
 
-    String html = f.readString();
-    f.close();
+// GET /api/status
+static void handleApiStatus() {
+    sendCorsHeaders();
 
-    // ------- Time / Date -------
-    uint8_t h, m, s;
-    rtcGetTime(h, m, s);
+    uint8_t h, m, s, dow;
+    rtcGetTime(h, m, s, dow);
 
     char timeBuf[12];
     snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d:%02d", h, m, s);
-    html.replace("{{TIME_STR}}", timeBuf);
 
-    // RTC fields for the settings form
-    html.replace("{{HOUR}}",   String(h));
-    html.replace("{{MINUTE}}", String(m));
-    html.replace("{{SECOND}}", String(s));
-    html.replace("{{YEAR}}",   "2026");
-    html.replace("{{MONTH}}",  "3");
-    html.replace("{{DAY}}",    "4");
-
-    // Date string – static for now
-    html.replace("{{DATE_STR}}", "India Standard Time | Wed, 4 Mar");
-
-    // ------- Schedule count -------
-    html.replace("{{TOTAL_SCHEDULES}}", String(*_scheduleCount));
-
-    // ------- Next Bell --------
-    // Find the soonest schedule after current time
+    // Find next bell
     String nextBell = "--:--";
     uint16_t nowMins = (uint16_t)h * 60 + m;
     uint16_t bestMins = 0xFFFF;
@@ -96,154 +143,93 @@ static void sendPage(const char* path) {
         uint16_t schedMins = (uint16_t)_schedules[i].hour * 60 + _schedules[i].minute;
         if (schedMins > nowMins && schedMins < bestMins) {
             bestMins = schedMins;
-            char nb[8];
-            snprintf(nb, sizeof(nb), "%02d:%02d", _schedules[i].hour, _schedules[i].minute);
+            int hr12 = _schedules[i].hour % 12;
+            if (hr12 == 0) hr12 = 12;
+            const char* ampm = (_schedules[i].hour >= 12) ? "PM" : "AM";
+            char nb[16];
+            snprintf(nb, sizeof(nb), "%02d:%02d %s", hr12, _schedules[i].minute, ampm);
             nextBell = nb;
         }
     }
-    html.replace("{{NEXT_BELL}}", nextBell);
 
-    // ------- Schedule list HTML -------
-    if (html.indexOf("{{SCHEDULE_LIST}}") != -1) {
-        String listHtml = "";
-        if (*_scheduleCount == 0) {
-            listHtml = "<div class='empty'>"
-                       "<span class='empty-icon'><svg viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z\"/></svg></span>"
-                       "<p class='empty-text'>No schedules yet</p>"
-                       "<a href='/configure' class='add-first'>Add First Schedule</a>"
-                       "</div>";
-        } else {
-            for (uint8_t i = 0; i < *_scheduleCount; i++) {
-                // Build pattern summary: e.g. 3s/1s, 5s
-                String pattern = "";
-                for (uint8_t st = 0; st < _schedules[i].stepCount && st < MAX_STEPS; st++) {
-                    if (st > 0) pattern += ", ";
-                    pattern += String(_schedules[i].steps[st].duration) + "s";
-                    if (_schedules[i].steps[st].delay > 0)
-                        pattern += "/" + String(_schedules[i].steps[st].delay) + "s";
-                }
+    // Date string
+    // Note: RTC date not easily available from rtcGetTime; provide a static format
+    // The SPA computes its own date from the browser clock
 
-                int hr12 = _schedules[i].hour % 12;
-                if (hr12 == 0) hr12 = 12;
-                const char* ampm = (_schedules[i].hour >= 12) ? "PM" : "AM";
-
-                char entry[1500];
-                snprintf(entry, sizeof(entry),
-                    "<div class='card'>"
-                        "<div class='flex justify-between items-start mb-4'>"
-                            "<div>"
-                                "<h3 class='flex items-baseline gap-1'>"
-                                    "<span class='time-display'>%02d:%02d</span>"
-                                    "<span class='time-ampm'>%s</span>"
-                                "</h3>"
-                                "<p class='card-title'>Schedule #%d</p>"
-                            "</div>"
-                            "<label class='switch'>"
-                                "<input type='checkbox' checked>"
-                                "<div class='switch-track'><div class='switch-thumb'></div></div>"
-                            "</label>"
-                        "</div>"
-                        "<div class='pattern-info flex justify-between items-center'>"
-                            "<div class='flex items-center gap-2'>"
-                                "<span class='pattern-info-icon'><svg viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"currentColor\"><path d=\"M7 18h2V6H7v12zm4 4h2V2h-2v20zm-8-8h2v-4H3v4zm12 4h2V6h-2v12zm4-8v4h2v-4h-2z\"/></svg></span>"
-                                "<span class='pattern-text'>%s</span>"
-                            "</div>"
-                            "<span class='pattern-badge'>%d step(s)</span>"
-                        "</div>"
-                        "<div class='flex items-center gap-3'>"
-                            "<form action='/ring' method='POST' style='flex:1;display:flex;'><button type='submit' class='btn-test'>"
-                                "<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg>"
-                                "Test"
-                            "</button></form>"
-                            "<div class='flex gap-2'>"
-                                "<a href='#' class='btn-icon' aria-label='Edit'>"
-                                    "<svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\" fill=\"currentColor\"><path d=\"M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z\"/></svg>"
-                                "</a>"
-                                "<a href='/delete?idx=%d' class='btn-icon danger' aria-label='Delete'>"
-                                    "<svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\" fill=\"currentColor\"><path d=\"M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7z\"/></svg>"
-                                "</a>"
-                            "</div>"
-                        "</div>"
-                    "</div>",
-                    hr12, _schedules[i].minute, ampm,
-                    i + 1,
-                    pattern.c_str(),
-                    _schedules[i].stepCount,
-                    i
-                );
-                listHtml += entry;
-            }
-        }
-        html.replace("{{SCHEDULE_LIST}}", listHtml);
-    }
-
-    // ------- Maintenance data -------
     unsigned long uptimeSec = millis() / 1000;
     char uptimeBuf[24];
     snprintf(uptimeBuf, sizeof(uptimeBuf), "%luh %02lum %02lus",
              uptimeSec / 3600, (uptimeSec % 3600) / 60, uptimeSec % 60);
-    html.replace("{{UPTIME}}", uptimeBuf);
-    html.replace("{{FREE_HEAP}}", String(ESP.getFreeHeap() / 1024));
 
-    // Log entries placeholder
-    html.replace("{{LOG_ENTRIES}}",
-        String("<div class='log-entry'>"
-            "<div class='log-dot green'>&#x2714;</div>"
-            "<div>"
-                "<div class='log-title'>System Ready</div>"
-                "<div class='log-time'>Uptime: ") + uptimeBuf + "</div>"
-            "</div>"
-        "</div>"
-        "<div class='log-entry'>"
-            "<div class='log-dot blue'>&#x1F4CA;</div>"
-            "<div>"
-                "<div class='log-title'>Free Heap</div>"
-                "<div class='log-time'>" + String(ESP.getFreeHeap() / 1024) + " KB available</div>"
-            "</div>"
-        "</div>"
-    );
+    String json = "{";
+    json += "\"time\":\"" + String(timeBuf) + "\",";
+    json += "\"date\":\"IST\",";
+    json += "\"nextBell\":\"" + nextBell + "\",";
+    json += "\"scheduleCount\":" + String(*_scheduleCount) + ",";
+    json += "\"uptime\":\"" + String(uptimeBuf) + "\",";
+    json += "\"freeHeap\":" + String(ESP.getFreeHeap() / 1024);
+    json += "}";
 
-    _server.send(200, "text/html", html);
+    _server.send(200, "application/json", json);
 }
 
-// ============================================================
-// ROUTE HANDLERS
-// ============================================================
+// GET /api/schedules
+static void handleApiGetSchedules() {
+    sendCorsHeaders();
 
-static void handleRoot()        { sendPage("/index.html"); }
-static void handleSchedules()   { sendPage("/schedules.html"); }
-static void handleConfigure()   { sendPage("/configure.html"); }
-static void handleSettings()    { sendPage("/settings.html"); }
-static void handleMaintenance() { sendPage("/maintenance.html"); }
+    String json = "[";
+    for (uint8_t i = 0; i < *_scheduleCount; i++) {
+        if (i > 0) json += ",";
+        json += "{";
+        json += "\"hour\":" + String(_schedules[i].hour) + ",";
+        json += "\"minute\":" + String(_schedules[i].minute) + ",";
+        json += "\"stepCount\":" + String(_schedules[i].stepCount) + ",";
+        json += "\"days\":" + String(_schedules[i].days) + ",";
+        json += "\"enabled\":" + String(_schedules[i].enabled ? "true" : "false") + ",";
+        json += "\"label\":\"" + String(_schedules[i].label) + "\",";
+        json += "\"steps\":[";
+        for (uint8_t st = 0; st < _schedules[i].stepCount && st < MAX_STEPS; st++) {
+            if (st > 0) json += ",";
+            json += "{\"duration\":" + String(_schedules[i].steps[st].duration);
+            json += ",\"delay\":" + String(_schedules[i].steps[st].delay) + "}";
+        }
+        json += "]}";
+    }
+    json += "]";
 
-static void handleAdd() {
+    _server.send(200, "application/json", json);
+}
+
+// POST /api/schedules
+static void handleApiAddSchedule() {
+    sendCorsHeaders();
+
     if (*_scheduleCount >= MAX_SCHEDULES) {
-        _server.sendHeader("Location", "/schedules");
-        _server.send(303);
+        _server.send(400, "application/json", "{\"error\":\"Max schedules reached\"}");
         return;
     }
 
-    uint8_t hour      = (uint8_t)_server.arg("hour").toInt();
-    uint8_t minute    = (uint8_t)_server.arg("minute").toInt();
-    uint8_t stepCount = (uint8_t)_server.arg("stepCount").toInt();
-
-    if (stepCount < 1)         stepCount = 1;
-    if (stepCount > MAX_STEPS) stepCount = MAX_STEPS;
+    String body = _server.arg("plain");
 
     BellTime newEntry;
-    newEntry.hour      = hour % 24;
-    newEntry.minute    = minute % 60;
-    newEntry.stepCount = stepCount;
+    newEntry.hour      = (uint8_t)(jsonParseInt(body, "hour") % 24);
+    newEntry.minute    = (uint8_t)(jsonParseInt(body, "minute") % 60);
+    newEntry.stepCount = (uint8_t)jsonParseInt(body, "stepCount", 1);
+    newEntry.days      = (uint8_t)jsonParseInt(body, "days", 127); // Default all days
+    newEntry.enabled   = jsonParseBool(body, "enabled", true);
+    
+    String labelStr = jsonParseString(body, "label", "Bell Schedule");
+    strncpy(newEntry.label, labelStr.c_str(), 15);
+    newEntry.label[15] = '\0';
+
+    if (newEntry.stepCount < 1)         newEntry.stepCount = 1;
+    if (newEntry.stepCount > MAX_STEPS) newEntry.stepCount = MAX_STEPS;
     memset(newEntry.steps, 0, sizeof(newEntry.steps));
 
-    char paramName[8];
-    for (uint8_t i = 0; i < stepCount; i++) {
-        snprintf(paramName, sizeof(paramName), "d%d", i);
-        uint8_t dur = (uint8_t)_server.arg(paramName).toInt();
-        newEntry.steps[i].duration = (dur < 1) ? 1 : dur;  // minimum 1s ON
-
-        snprintf(paramName, sizeof(paramName), "l%d", i);
-        newEntry.steps[i].delay = (uint8_t)_server.arg(paramName).toInt();
+    uint8_t parsed = jsonParseSteps(body, newEntry.steps, newEntry.stepCount);
+    // Ensure at least 1s duration for each step
+    for (uint8_t i = 0; i < newEntry.stepCount; i++) {
+        if (newEntry.steps[i].duration < 1) newEntry.steps[i].duration = 1;
     }
 
     _schedules[*_scheduleCount] = newEntry;
@@ -251,45 +237,208 @@ static void handleAdd() {
     storageSaveSchedules(_schedules, *_scheduleCount);
 
     DEBUG_PRINTF("[WEB] Added schedule: %02d:%02d (%d steps)\n",
-                 hour, minute, stepCount);
+                 newEntry.hour, newEntry.minute, newEntry.stepCount);
 
-    _server.sendHeader("Location", "/schedules");
-    _server.send(303);
+    _server.send(200, "application/json", "{\"ok\":true}");
 }
 
-static void handleDelete() {
-    if (_server.hasArg("idx")) {
-        uint8_t idx = (uint8_t)_server.arg("idx").toInt();
-        if (idx < *_scheduleCount) {
-            for (uint8_t i = idx; i < *_scheduleCount - 1; i++)
-                _schedules[i] = _schedules[i + 1];
-            memset(&_schedules[--(*_scheduleCount)], 0, sizeof(BellTime));
-            storageSaveSchedules(_schedules, *_scheduleCount);
-            DEBUG_PRINTF("[WEB] Deleted idx %d, %d remaining\n", idx, *_scheduleCount);
-        }
+// PUT /api/schedules?idx=N
+static void handleApiEditSchedule() {
+    sendCorsHeaders();
+
+    if (!_server.hasArg("idx")) {
+        _server.send(400, "application/json", "{\"error\":\"Missing idx\"}");
+        return;
     }
-    _server.sendHeader("Location", "/schedules");
-    _server.send(303);
+
+    uint8_t idx = (uint8_t)_server.arg("idx").toInt();
+    if (idx >= *_scheduleCount) {
+        _server.send(400, "application/json", "{\"error\":\"Invalid idx\"}");
+        return;
+    }
+
+    String body = _server.arg("plain");
+
+    BellTime &editEntry = _schedules[idx];
+    editEntry.hour      = (uint8_t)(jsonParseInt(body, "hour") % 24);
+    editEntry.minute    = (uint8_t)(jsonParseInt(body, "minute") % 60);
+    editEntry.stepCount = (uint8_t)jsonParseInt(body, "stepCount", 1);
+    editEntry.days      = (uint8_t)jsonParseInt(body, "days", 127);
+    editEntry.enabled   = jsonParseBool(body, "enabled", true);
+
+    String labelStr = jsonParseString(body, "label", "Bell Schedule");
+    strncpy(editEntry.label, labelStr.c_str(), 15);
+    editEntry.label[15] = '\0';
+
+    if (editEntry.stepCount < 1)         editEntry.stepCount = 1;
+    if (editEntry.stepCount > MAX_STEPS) editEntry.stepCount = MAX_STEPS;
+    memset(editEntry.steps, 0, sizeof(editEntry.steps));
+
+    uint8_t parsed = jsonParseSteps(body, editEntry.steps, editEntry.stepCount);
+    for (uint8_t i = 0; i < editEntry.stepCount; i++) {
+        if (editEntry.steps[i].duration < 1) editEntry.steps[i].duration = 1;
+    }
+
+    storageSaveSchedules(_schedules, *_scheduleCount);
+
+    DEBUG_PRINTF("[WEB] Edited schedule idx %d: %02d:%02d\n",
+                 idx, editEntry.hour, editEntry.minute);
+
+    _server.send(200, "application/json", "{\"ok\":true}");
 }
 
-static void handleRing() {
+// DELETE /api/schedules?idx=N
+static void handleApiDeleteSchedule() {
+    sendCorsHeaders();
+
+    if (!_server.hasArg("idx")) {
+        _server.send(400, "application/json", "{\"error\":\"Missing idx\"}");
+        return;
+    }
+
+    uint8_t idx = (uint8_t)_server.arg("idx").toInt();
+    if (idx >= *_scheduleCount) {
+        _server.send(400, "application/json", "{\"error\":\"Invalid idx\"}");
+        return;
+    }
+
+    for (uint8_t i = idx; i < *_scheduleCount - 1; i++)
+        _schedules[i] = _schedules[i + 1];
+    memset(&_schedules[--(*_scheduleCount)], 0, sizeof(BellTime));
+    storageSaveSchedules(_schedules, *_scheduleCount);
+
+    DEBUG_PRINTF("[WEB] Deleted idx %d, %d remaining\n", idx, *_scheduleCount);
+
+    _server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// POST /api/ring
+static void handleApiRing() {
+    sendCorsHeaders();
+
     if (!patternIsRunning())
         patternStartManual(MANUAL_RING_DURATION_S);
-    _server.sendHeader("Location", "/");
-    _server.send(303);
+
+    _server.send(200, "application/json", "{\"ok\":true}");
 }
 
-static void handleSetTime() {
+// POST /api/test-pattern
+static void handleApiTestPattern() {
+    sendCorsHeaders();
+
+    String body = _server.arg("plain");
+
+    BellTime tempEntry;
+    tempEntry.hour      = 0;
+    tempEntry.minute    = 0;
+    tempEntry.stepCount = (uint8_t)jsonParseInt(body, "stepCount", 1);
+    if (tempEntry.stepCount < 1)         tempEntry.stepCount = 1;
+    if (tempEntry.stepCount > MAX_STEPS) tempEntry.stepCount = MAX_STEPS;
+    memset(tempEntry.steps, 0, sizeof(tempEntry.steps));
+
+    uint8_t parsed = jsonParseSteps(body, tempEntry.steps, tempEntry.stepCount);
+    // Ensure at least 1s duration for each step
+    for (uint8_t i = 0; i < tempEntry.stepCount; i++) {
+        if (tempEntry.steps[i].duration < 1) tempEntry.steps[i].duration = 1;
+    }
+
+    if (!patternIsRunning()) {
+        patternStartTest(tempEntry);
+    } else {
+        _server.send(400, "application/json", "{\"error\":\"Bell is currently ringing\"}");
+        return;
+    }
+
+    _server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// POST /api/set-time
+static void handleApiSetTime() {
+    sendCorsHeaders();
+
+    String body = _server.arg("plain");
+
     rtcSetTime(
-        (uint16_t)_server.arg("year").toInt(),
-        (uint8_t)_server.arg("month").toInt(),
-        (uint8_t)_server.arg("day").toInt(),
-        (uint8_t)_server.arg("hour").toInt(),
-        (uint8_t)_server.arg("min").toInt(),
-        (uint8_t)_server.arg("sec").toInt()
+        (uint16_t)jsonParseInt(body, "year", 2026),
+        (uint8_t)jsonParseInt(body, "month", 1),
+        (uint8_t)jsonParseInt(body, "day", 1),
+        (uint8_t)jsonParseInt(body, "hour", 0),
+        (uint8_t)jsonParseInt(body, "min", 0),
+        (uint8_t)jsonParseInt(body, "sec", 0)
     );
-    _server.sendHeader("Location", "/settings");
-    _server.send(303);
+
+    DEBUG_PRINTLN("[WEB] RTC time updated via API");
+
+    _server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// POST /api/restart
+static void handleApiRestart() {
+    sendCorsHeaders();
+    _server.send(200, "application/json", "{\"ok\":true}");
+    delay(500);
+    ESP.restart();
+}
+
+// GET /api/system
+static void handleApiSystem() {
+    sendCorsHeaders();
+
+    unsigned long uptimeSec = millis() / 1000;
+    char uptimeBuf[24];
+    snprintf(uptimeBuf, sizeof(uptimeBuf), "%luh %02lum %02lus",
+             uptimeSec / 3600, (uptimeSec % 3600) / 60, uptimeSec % 60);
+
+    String json = "{";
+    json += "\"uptime\":\"" + String(uptimeBuf) + "\",";
+    json += "\"freeHeap\":" + String(ESP.getFreeHeap() / 1024) + ",";
+    json += "\"firmwareVersion\":\"1.0.0\"";
+    json += "}";
+
+    _server.send(200, "application/json", json);
+}
+
+// GET /api/logs
+static void handleApiLogs() {
+    sendCorsHeaders();
+
+    unsigned long uptimeSec = millis() / 1000;
+    char uptimeBuf[24];
+    snprintf(uptimeBuf, sizeof(uptimeBuf), "%luh %02lum %02lus",
+             uptimeSec / 3600, (uptimeSec % 3600) / 60, uptimeSec % 60);
+
+    // Simple log entries based on system state
+    String json = "[";
+    json += "{\"type\":\"system\",\"title\":\"System Ready\",\"time\":\"Uptime: " + String(uptimeBuf) + "\"},";
+    json += "{\"type\":\"info\",\"title\":\"Free Heap\",\"time\":\"" + String(ESP.getFreeHeap() / 1024) + " KB available\"},";
+    json += "{\"type\":\"wifi\",\"title\":\"WiFi AP Active\",\"time\":\"SSID: " + String(AP_SSID) + "\"}";
+    if (*_scheduleCount > 0) {
+        json += ",{\"type\":\"bell\",\"title\":\"Schedules Loaded\",\"time\":\"" + String(*_scheduleCount) + " schedule(s) active\"}";
+    }
+    json += "]";
+
+    _server.send(200, "application/json", json);
+}
+
+// OPTIONS handler for CORS preflight
+static void handleOptions() {
+    sendCorsHeaders();
+    _server.send(204);
+}
+
+// SPA fallback – serve index.html for unknown routes
+static void handleNotFound() {
+    // Check if it's an API route – return 404 JSON
+    if (_server.uri().startsWith("/api/")) {
+        sendCorsHeaders();
+        _server.send(404, "application/json", "{\"error\":\"Not found\"}");
+        return;
+    }
+    // For all other routes, serve index.html so SPA routing works
+    _server.sendHeader("Content-Encoding", "gzip");
+    _server.send_P(200, "text/html",
+        (const char *)static_files::f_index_html_contents,
+        static_files::f_index_html_size);
 }
 
 // ============================================================
@@ -300,13 +449,6 @@ void webConfigInit(BellTime* schedules, uint8_t* scheduleCount) {
     _schedules     = schedules;
     _scheduleCount = scheduleCount;
 
-    // Mount filesystem (LittleFS on core 2.x, SPIFFS on core 1.x)
-    if (!FILESYSTEM.begin(true)) {
-        DEBUG_PRINTLN("[FS] Filesystem mount failed. Run: pio run -t uploadfs");
-    } else {
-        DEBUG_PRINTLN("[FS] Filesystem mounted OK");
-    }
-
     // Start Wi-Fi AP
     WiFi.softAP(AP_SSID, AP_PASSWORD);
     DEBUG_PRINT("[WIFI] AP started: ");
@@ -314,20 +456,54 @@ void webConfigInit(BellTime* schedules, uint8_t* scheduleCount) {
     DEBUG_PRINT("[WIFI] IP: ");
     DEBUG_PRINTLN(WiFi.softAPIP().toString());
 
-    // Register routes
-    _server.on("/",            HTTP_GET,  handleRoot);
-    _server.on("/schedules",   HTTP_GET,  handleSchedules);
-    _server.on("/configure",   HTTP_GET,  handleConfigure);
-    _server.on("/settings",    HTTP_GET,  handleSettings);
-    _server.on("/maintenance", HTTP_GET,  handleMaintenance);
+    // ---- Serve compiled SPA static files from static_files.h ----
+    // Loop over all compiled assets and register a route for each
+    for (int i = 0; i < static_files::num_of_files; i++) {
+        _server.on(static_files::files[i].path, [i]() {
+            _server.sendHeader("Content-Encoding", "gzip");
+            _server.send_P(200,
+                static_files::files[i].type,
+                (const char *)static_files::files[i].contents,
+                static_files::files[i].size);
+        });
+    }
 
-    _server.on("/add",         HTTP_POST, handleAdd);
-    _server.on("/delete",      HTTP_GET,  handleDelete);
-    _server.on("/ring",        HTTP_POST, handleRing);
-    _server.on("/set-time",    HTTP_POST, handleSetTime);
+    // Serve index.html as the root entry point
+    _server.on("/", HTTP_GET, []() {
+        _server.sendHeader("Content-Encoding", "gzip");
+        _server.send_P(200, "text/html",
+            (const char *)static_files::f_index_html_contents,
+            static_files::f_index_html_size);
+    });
+
+    // ---- JSON API endpoints ----
+    _server.on("/api/status",    HTTP_GET,    handleApiStatus);
+    _server.on("/api/schedules", HTTP_GET,    handleApiGetSchedules);
+    _server.on("/api/schedules", HTTP_POST,   handleApiAddSchedule);
+    _server.on("/api/schedules", HTTP_PUT,    handleApiEditSchedule);
+    _server.on("/api/schedules", HTTP_DELETE, handleApiDeleteSchedule);
+    _server.on("/api/ring",      HTTP_POST,   handleApiRing);
+    _server.on("/api/test-pattern", HTTP_POST, handleApiTestPattern);
+    _server.on("/api/set-time",  HTTP_POST,   handleApiSetTime);
+    _server.on("/api/restart",   HTTP_POST,   handleApiRestart);
+    _server.on("/api/system",    HTTP_GET,    handleApiSystem);
+    _server.on("/api/logs",      HTTP_GET,    handleApiLogs);
+
+    // CORS preflight for all API routes
+    _server.on("/api/status",    HTTP_OPTIONS, handleOptions);
+    _server.on("/api/schedules", HTTP_OPTIONS, handleOptions);
+    _server.on("/api/ring",      HTTP_OPTIONS, handleOptions);
+    _server.on("/api/test-pattern", HTTP_OPTIONS, handleOptions);
+    _server.on("/api/set-time",  HTTP_OPTIONS, handleOptions);
+    _server.on("/api/restart",   HTTP_OPTIONS, handleOptions);
+    _server.on("/api/system",    HTTP_OPTIONS, handleOptions);
+    _server.on("/api/logs",      HTTP_OPTIONS, handleOptions);
+
+    // SPA fallback for client-side routing
+    _server.onNotFound(handleNotFound);
 
     _server.begin();
-    DEBUG_PRINTLN("[WEB] LittleFS-backed server started on port 80");
+    DEBUG_PRINTLN("[WEB] SPA + JSON API server started on port 80");
 }
 
 void webConfigLoop() {
