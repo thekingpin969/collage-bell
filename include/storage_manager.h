@@ -30,4 +30,30 @@ void storageLoadSchedules(BellTime* schedules, uint8_t &count);
  */
 void storageSaveSchedules(const BellTime* schedules, uint8_t count);
 
+/**
+ * @brief Load system settings from NVS
+ * @param[out] settings  Struct to populate with settings
+ */
+void storageLoadSettings(SystemSettings& settings);
+
+/**
+ * @brief Save system settings to NVS
+ * @param[in] settings   Struct containing settings to save
+ */
+void storageSaveSettings(const SystemSettings& settings);
+
+/**
+ * @brief Load saved WiFi credentials
+ * @param[out] ssid      String to store the loaded SSID
+ * @param[out] password  String to store the loaded password
+ */
+void storageLoadWifiConfig(String& ssid, String& password);
+
+/**
+ * @brief Save WiFi credentials to NVS
+ * @param[in] ssid      SSID to save
+ * @param[in] password  Password to save
+ */
+void storageSaveWifiConfig(const String& ssid, const String& password);
+
 #endif // STORAGE_MANAGER_H

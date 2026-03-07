@@ -35,6 +35,17 @@ void rtcGetTime(uint8_t &hour, uint8_t &minute, uint8_t &second, uint8_t &dayOfW
     dayOfWeek = now.dayOfTheWeek();
 }
 
+void rtcGetDateTime(uint16_t &year, uint8_t &month, uint8_t &day,
+                    uint8_t &hour, uint8_t &minute, uint8_t &second) {
+    DateTime now = _rtc.now();
+    year   = now.year();
+    month  = now.month();
+    day    = now.day();
+    hour   = now.hour();
+    minute = now.minute();
+    second = now.second();
+}
+
 bool rtcSetTime(uint16_t year, uint8_t month, uint8_t day,
                 uint8_t hour, uint8_t minute, uint8_t second) {
     _rtc.adjust(DateTime(year, month, day, hour, minute, second));

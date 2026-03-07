@@ -22,6 +22,11 @@ static bool          _relayOn         = false;
 static bool          _useManual       = false;
 static BellTime      _manualBell;     // Temp storage for manual ring
 
+// ---- Dynamic Manual State ----
+static bool          _dynamicManual   = false;
+static unsigned long _dynamicTimeoutMs = 0;
+static unsigned long _dynamicMinMs     = 0;
+
 // ---- Helpers ----
 static void relayON() {
     digitalWrite(RELAY_PIN, LOW);   // Active-LOW relay
@@ -49,6 +54,7 @@ void patternStart(uint8_t scheduleIndex) {
     if (_running) return;  // Don't interrupt an active pattern
 
     _useManual = false;
+    _dynamicManual = false;
     _schedIdx  = scheduleIndex;
     _stepIdx   = 0;
     _running   = true;
@@ -70,12 +76,30 @@ void patternStartManual(uint8_t durationSec) {
     _manualBell.steps[0].delay    = 0;
 
     _useManual   = true;
+    _dynamicManual = false;
     _stepIdx     = 0;
     _running     = true;
     _stepStartMs = millis();
     relayON();
 
     DEBUG_PRINTF("[PATTERN] Manual ring for %d sec\n", durationSec);
+}
+
+void patternStartDynamicManual(uint8_t keepAliveSec) {
+    unsigned long now = millis();
+    
+    // If we're running a pattern that is NOT dynamic manual, don't interrupt it.
+    if (_running && !_dynamicManual) return;
+    
+    _dynamicManual = true;
+    _running = true;
+    _dynamicTimeoutMs = now + (keepAliveSec * 1000UL);
+
+    if (!_relayOn) {
+        _dynamicMinMs = now + 500UL; // Enforce at least 500ms ring duration
+        relayON();
+        DEBUG_PRINTLN("[PATTERN] Dynamic manual ring started");
+    }
 }
 
 void patternStartTest(const BellTime& testBell) {
@@ -98,6 +122,21 @@ void patternStartTest(const BellTime& testBell) {
 
 void patternLoop() {
     if (!_running) return;
+
+    if (_dynamicManual) {
+        unsigned long now = millis();
+        // Check if watchdog expired
+        if (now >= _dynamicTimeoutMs) {
+            // Also ensure minimum duration has been met
+            if (now >= _dynamicMinMs) {
+                _running = false;
+                _dynamicManual = false;
+                relayOFF();
+                DEBUG_PRINTLN("[PATTERN] Dynamic manual ring stopped (watchdog/timeout)");
+            }
+        }
+        return; // Skip normal pattern processing if in dynamic manual mode
+    }
 
     // Get the active BellTime (either from schedule array or manual)
     BellTime &bell = _useManual ? _manualBell : _schedules[_schedIdx];
@@ -142,7 +181,16 @@ bool patternIsRunning() {
 }
 
 void patternStop() {
+    unsigned long now = millis();
+    
+    // If it's a dynamic manual ring, ensure the minimum ring time is respected
+    if (_dynamicManual && _relayOn && now < _dynamicMinMs) {
+        _dynamicTimeoutMs = _dynamicMinMs; // Let it run exactly until min duration expires
+        return;
+    }
+
     _running = false;
+    _dynamicManual = false;
     relayOFF();
-    DEBUG_PRINTLN("[PATTERN] Emergency stop");
+    DEBUG_PRINTLN("[PATTERN] Stopped");
 }

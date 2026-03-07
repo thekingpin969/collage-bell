@@ -2,6 +2,7 @@ import { h } from 'preact';
 import { useState, useContext, useEffect, useRef } from 'preact/hooks';
 import { Link, RouterContext } from '../router';
 import { api } from '../api';
+import { IconClose, IconDotsVertical, IconEdit, IconPlus, IconRemove, IconPlay } from '../components/Icons';
 import './Configure.css';
 
 export const Configure = () => {
@@ -135,11 +136,11 @@ export const Configure = () => {
         <div class="cfg-container">
             <header class="cfg-header">
                 <Link to="/schedules" aria-label="Close" class="cfg-icon-btn left">
-                    <span class="cfg-icon-primary">✕</span>
+                    <span class="cfg-icon-primary"><IconClose /></span>
                 </Link>
                 <h1>{editIdx !== null ? 'Edit Schedule' : 'New Schedule'}</h1>
                 <button type="button" aria-label="More options" class="cfg-icon-btn right">
-                    <span class="cfg-icon-primary">⋮</span>
+                    <span class="cfg-icon-primary"><IconDotsVertical /></span>
                 </button>
             </header>
 
@@ -195,7 +196,7 @@ export const Configure = () => {
                                     placeholder="Bell Schedule"
                                 />
                             </div>
-                            <span class="cfg-card-icon" style={{marginLeft: '0.5rem'}}>✎</span>
+                            <span class="cfg-card-icon" style={{marginLeft: '0.5rem', width: '20px', height: '20px'}}><IconEdit /></span>
                         </div>
                         <div class="cfg-card" style={{flexDirection: 'column', alignItems: 'flex-start', gap: '1rem', cursor: 'default'}}>
                             <div style={{display: 'flex', justifyContent: 'space-between', width: '100%'}}>
@@ -231,7 +232,7 @@ export const Configure = () => {
                         <div class="cfg-pattern-header">
                             <h2 class="cfg-section-title" style={{marginLeft: 0}}>Pattern Builder</h2>
                             <button type="button" class="cfg-add-btn" onClick={() => setStepCount(Math.min(5, stepCount + 1))}>
-                                <span class="cfg-add-icon">＋</span> Add Step
+                                <span class="cfg-add-icon" style={{ display: 'flex' }}><IconPlus style={{ width: '18px', height: '18px' }} /></span> Add Step
                             </button>
                         </div>
                         
@@ -254,7 +255,7 @@ export const Configure = () => {
                                         </div>
                                     </div>
                                     <button type="button" class="cfg-step-remove-btn" aria-label="Remove step" onClick={() => setStepCount(Math.max(1, stepCount - 1))}>
-                                        <span class="cfg-step-remove-icon">⛔</span>
+                                        <span class="cfg-step-remove-icon" style={{ display: 'flex' }}><IconRemove /></span>
                                     </button>
                                 </div>
                             ))}
@@ -283,7 +284,7 @@ export const Configure = () => {
                             steps: steps.slice(0, stepCount).map(s => ({ duration: s.on, delay: s.pause }))
                         }).catch(() => alert('Test pattern failed'));
                     }}>
-                        <span class="cfg-play-icon">▶</span> Test
+                        <span class="cfg-play-icon" style={{ display: 'flex' }}><IconPlay /></span> Test
                     </button>
                     <button onClick={handleSubmit} type="button" class="cfg-btn cfg-btn-primary" disabled={saving}>
                         {saving ? 'Saving...' : 'Save'}

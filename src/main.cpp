@@ -24,15 +24,19 @@
 #include "rtc_service.h"
 #include "storage_manager.h"
 #include "pattern_engine.h"
+#include "pattern_engine.h"
 #include "scheduler.h"
 #include "manual_override.h"
 #include "web_config.h"
+#include "led_feedback.h"
+#include "wifi_manager.h"
 
 // ============================================================
 // GLOBAL RUNTIME DATA (static, no heap)
 // ============================================================
 static BellTime g_schedules[MAX_SCHEDULES];
 static uint8_t  g_scheduleCount = 0;
+static SystemSettings g_settings;
 
 // ============================================================
 // SETUP
@@ -55,26 +59,35 @@ void setup() {
     digitalWrite(LED_PIN, LOW);      // LED OFF
 
     // --- 3. RTC init ---
-    if (!rtcInit()) {
+    bool rtcOk = rtcInit();
+    if (!rtcOk) {
         DEBUG_PRINTLN("[BOOT] RTC FAILED – system will not schedule bells");
         // Don't halt – web config and manual override still work
     }
 
-    // --- 4. NVS init + load schedules ---
+    // --- 3a. LED feedback init (needs RTC result) ---
+    ledInit(rtcOk);
+
+    // --- 4. NVS init + load schedules/settings ---
     storageInit();
     storageLoadSchedules(g_schedules, g_scheduleCount);
+    storageLoadSettings(g_settings);
 
     // --- 5. Pattern engine init (needs schedule pointer) ---
     patternInit(g_schedules);
 
     // --- 6. Web config (starts AP + HTTP server) ---
-    webConfigInit(g_schedules, &g_scheduleCount);
+    webConfigInit(g_schedules, &g_scheduleCount, &g_settings);
 
     // --- 7. Scheduler init ---
-    schedulerInit(g_schedules, &g_scheduleCount);
+    schedulerInit(g_schedules, &g_scheduleCount, &g_settings);
 
     // --- 8. Manual override button ---
     manualOverrideInit();
+
+    // --- 9. WiFi Client (STA) init ---
+    // Start after AP has been set up in web_config
+    wifiManagerInit();
 
     DEBUG_PRINTLN("[BOOT] System ready");
     DEBUG_PRINTLN("================================");
@@ -88,4 +101,6 @@ void loop() {
     schedulerLoop();        // Check RTC vs schedules (once/sec)
     patternLoop();          // Advance pattern state machine
     manualOverrideLoop();   // Check push-button
+    ledLoop();              // Update diagnostic LEDs
+    wifiManagerLoop();      // Handle STA WiFi connections
 }

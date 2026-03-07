@@ -4,6 +4,7 @@ import { Layout } from '../components/Layout';
 import { BottomNav } from '../components/BottomNav';
 import { Link } from '../router';
 import { api } from '../api';
+import { IconSync, IconPower, IconBell, IconSpeaker, IconClose, IconChevronRight } from '../components/Icons';
 import './Dashboard.css';
 
 export const Dashboard = () => {
@@ -16,11 +17,13 @@ export const Dashboard = () => {
     const [nextBell, setNextBell] = useState('--:--');
     const [scheduleCount, setScheduleCount] = useState(0);
     const [ringing, setRinging] = useState(false);
+    const [isSheetOpen, setIsSheetOpen] = useState(false);
+    const timeOffsetRef = useRef(0);
 
     useEffect(() => {
         let timerId;
         const tick = () => {
-            const now = new Date();
+            const now = new Date(Date.now() + timeOffsetRef.current);
             const h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
             const h12 = h % 12;
             const hDeg = h12 * 30 + m * 0.5 + s * (0.5 / 60);
@@ -52,6 +55,10 @@ export const Dashboard = () => {
                 .then(data => {
                     if (data.nextBell) setNextBell(data.nextBell);
                     if (data.scheduleCount !== undefined) setScheduleCount(data.scheduleCount);
+                    if (data.year !== undefined) {
+                        const espDate = new Date(data.year, data.month - 1, data.day, data.hour, data.minute, data.second);
+                        timeOffsetRef.current = espDate.getTime() - Date.now();
+                    }
                 })
                 .catch(() => {});
         };
@@ -60,10 +67,50 @@ export const Dashboard = () => {
         return () => clearInterval(interval);
     }, []);
 
-    const handleRing = () => {
+    const ringIntervalRef = useRef(null);
+    const isRingingRef = useRef(false);
+
+    const startManualRing = () => {
+        if (isRingingRef.current) return;
+        isRingingRef.current = true;
         setRinging(true);
-        api.ring().catch(() => {}).finally(() => setTimeout(() => setRinging(false), 2000));
+
+        api.ring({ state: 'on' }).catch(() => {});
+        ringIntervalRef.current = setInterval(() => {
+            api.ring({ state: 'on' }).catch(() => {});
+        }, 1500);
     };
+
+    const stopManualRing = () => {
+        if (!isRingingRef.current) return;
+        isRingingRef.current = false;
+        setRinging(false);
+
+        if (ringIntervalRef.current) {
+            clearInterval(ringIntervalRef.current);
+            ringIntervalRef.current = null;
+        }
+        api.ring({ state: 'off' }).catch(() => {});
+    };
+
+    // Handle tab switching and unmount cleanup
+    useEffect(() => {
+        const handleVisibility = () => {
+            if (document.hidden) stopManualRing();
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibility);
+            if (ringIntervalRef.current) clearInterval(ringIntervalRef.current);
+        };
+    }, []);
+
+    // Ensure the ring stops if the bottom sheet is closed while ringing
+    useEffect(() => {
+        if (!isSheetOpen) {
+            stopManualRing();
+        }
+    }, [isSheetOpen]);
 
     const handleSyncTime = () => {
         const now = new Date();
@@ -142,35 +189,76 @@ export const Dashboard = () => {
                         <button class="db-action-btn" onClick={handleSyncTime}>
                             <div class="db-action-content">
                                 <div class="db-action-icon blue">
-                                    <span style={{ fontSize: '24px' }}>🔄</span>
+                                    <IconSync />
                                 </div>
                                 <div class="db-action-text">
                                     <p>Sync Time</p>
                                     <p>Sync RTC with browser time</p>
                                 </div>
                             </div>
-                            <span class="db-action-chevron">›</span>
+                            <span class="db-action-chevron">
+                                <IconChevronRight style={{ width: '20px', height: '20px' }} />
+                            </span>
                         </button>
 
                         <button class="db-action-btn" onClick={handleRestart}>
                             <div class="db-action-content">
                                 <div class="db-action-icon red">
-                                    <span style={{ fontSize: '24px' }}>⏻</span>
+                                    <IconPower />
                                 </div>
                                 <div class="db-action-text">
                                     <p>Restart Device</p>
                                     <p>Reboot ESP32 controller</p>
                                 </div>
                             </div>
-                            <span class="db-action-chevron">›</span>
+                            <span class="db-action-chevron">
+                                <IconChevronRight style={{ width: '20px', height: '20px' }} />
+                            </span>
                         </button>
                     </div>
                 </main>
 
                 <div class="db-fab-container">
-                    <button onClick={handleRing} disabled={ringing} aria-label="Ring Bell Now" class="db-fab-btn" style={{pointerEvents: 'auto'}}>
-                        <span style={{ fontSize: '24px' }}>{ringing ? '🔊' : '🔔'}</span>
+                    <button 
+                        onClick={() => setIsSheetOpen(true)}
+                        aria-label="Open Manual Ring" 
+                        class="db-fab-btn" 
+                    >
+                        <IconBell style={{ width: '28px', height: '28px' }} />
                     </button>
+                </div>
+
+                {/* Bottom Sheet Overlay */}
+                <div 
+                    class={`db-sheet-overlay ${isSheetOpen ? 'active' : ''}`}
+                    onClick={() => setIsSheetOpen(false)}
+                ></div>
+
+                {/* Bottom Sheet Content */}
+                <div class={`db-sheet ${isSheetOpen ? 'active' : ''}`}>
+                    <div class="db-sheet-header">
+                        <h2 class="db-sheet-title">Manual Ring</h2>
+                        <button aria-label="Close" class="db-sheet-close" onClick={() => setIsSheetOpen(false)}>
+                            <IconClose />
+                        </button>
+                    </div>
+                    <div class="db-sheet-body">
+                        <p class="db-sheet-desc">
+                            Press and hold the button below to ring the bell continuously.
+                            The bell will stop automatically when you release the button.
+                        </p>
+                        <button
+                            class={`db-sheet-ring-btn ${ringing ? 'active' : ''}`}
+                            onPointerDown={startManualRing}
+                            onPointerUp={stopManualRing}
+                            onPointerLeave={stopManualRing}
+                            onPointerCancel={stopManualRing}
+                            onContextMenu={(e) => e.preventDefault()}
+                        >
+                            {ringing ? <IconSpeaker style={{ width: '28px', height: '28px' }} /> : <IconBell style={{ width: '28px', height: '28px' }} />}
+                            <span>{ringing ? 'Ringing...' : 'Press & Hold to Ring'}</span>
+                        </button>
+                    </div>
                 </div>
 
                 <BottomNav />

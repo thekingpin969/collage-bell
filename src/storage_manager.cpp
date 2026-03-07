@@ -42,3 +42,34 @@ void storageSaveSchedules(const BellTime* schedules, uint8_t count) {
 
     DEBUG_PRINTF("[NVS] Saved %d schedule(s)\n", count);
 }
+
+void storageLoadSettings(SystemSettings& settings) {
+    // Set absolute defaults
+    strncpy(settings.deviceName, "College Bell System", 31);
+    settings.deviceName[31] = '\0';
+    settings.masterEnable = true;
+
+    size_t len = _prefs.getBytes("sys_cfg", &settings, sizeof(SystemSettings));
+    if (len == sizeof(SystemSettings)) {
+        DEBUG_PRINTF("[NVS] Loaded settings. Name: %s, Master: %d\n", settings.deviceName, settings.masterEnable);
+    } else {
+        DEBUG_PRINTLN("[NVS] No saved settings, using defaults");
+    }
+}
+
+void storageSaveSettings(const SystemSettings& settings) {
+    _prefs.putBytes("sys_cfg", &settings, sizeof(SystemSettings));
+    DEBUG_PRINTF("[NVS] Saved settings. Name: %s, Master: %d\n", settings.deviceName, settings.masterEnable);
+}
+
+void storageLoadWifiConfig(String& ssid, String& password) {
+    ssid = _prefs.getString("wifi_ssid", "");
+    password = _prefs.getString("wifi_pass", "");
+    DEBUG_PRINTF("[NVS] Loaded WiFi Config: %s\n", ssid.isEmpty() ? "(none)" : ssid.c_str());
+}
+
+void storageSaveWifiConfig(const String& ssid, const String& password) {
+    _prefs.putString("wifi_ssid", ssid);
+    _prefs.putString("wifi_pass", password);
+    DEBUG_PRINTF("[NVS] Saved WiFi Config: %s\n", ssid.c_str());
+}

@@ -27,6 +27,18 @@ bool rtcInit();
 void rtcGetTime(uint8_t &hour, uint8_t &minute, uint8_t &second, uint8_t &dayOfWeek);
 
 /**
+ * @brief Read current date and time from the RTC.
+ * @param[out] year   Current year   (e.g., 2026)
+ * @param[out] month  Current month  (1-12)
+ * @param[out] day    Current day    (1-31)
+ * @param[out] hour   Current hour   (0-23)
+ * @param[out] minute Current minute (0-59)
+ * @param[out] second Current second (0-59)
+ */
+void rtcGetDateTime(uint16_t &year, uint8_t &month, uint8_t &day,
+                    uint8_t &hour, uint8_t &minute, uint8_t &second);
+
+/**
  * @brief Set the RTC to a specific date/time (admin request).
  * @return true on success.
  */

@@ -444,3 +444,126 @@
 .db-fab-btn .material-icons {
     font-size: 1.875rem;
 }
+
+/* ============================================================ */
+/* BOTTOM SHEET (Manual Ring) */
+/* ============================================================ */
+
+.db-sheet-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+    z-index: 50;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.db-sheet-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.db-sheet {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: var(--db-surface);
+    border-radius: 1.5rem 1.5rem 0 0;
+    padding: 1.5rem;
+    z-index: 51;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    max-width: 28rem;
+    margin: 0 auto;
+}
+
+.db-sheet.active {
+    transform: translateY(0);
+}
+
+.db-sheet-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.db-sheet-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--db-text);
+    margin: 0;
+}
+
+.db-sheet-close {
+    background: transparent;
+    border: none;
+    color: var(--db-text-muted);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0.75rem;
+    margin: -0.75rem;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.db-sheet-close:hover {
+    background-color: var(--db-surface-hover);
+    color: var(--db-text);
+}
+
+.db-sheet-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding-bottom: 2rem;
+}
+
+.db-sheet-desc {
+    font-size: 0.875rem;
+    color: var(--db-text-muted);
+    text-align: center;
+    margin: 0 0 1rem 0;
+    line-height: 1.5;
+}
+
+.db-sheet-ring-btn {
+    width: 100%;
+    padding: 1.5rem;
+    border-radius: 1rem;
+    background-color: var(--db-primary);
+    color: #FFFFFF;
+    border: none;
+    font-size: 1.125rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    box-shadow: 0 10px 15px -3px var(--db-primary-shadow), 0 4px 6px -4px var(--db-primary-shadow);
+    transition: transform 0.15s, background-color 0.15s;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+}
+
+.db-sheet-ring-btn:hover {
+    background-color: var(--db-primary-hover);
+}
+
+.db-sheet-ring-btn:active,
+.db-sheet-ring-btn.active {
+    transform: scale(0.97);
+    background-color: var(--db-primary-hover);
+}

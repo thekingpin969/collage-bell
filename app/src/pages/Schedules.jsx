@@ -5,6 +5,7 @@ import { BottomNav } from '../components/BottomNav';
 import { Link, RouterContext } from '../router';
 import { api } from '../api';
 import { useContext } from 'preact/hooks';
+import { IconDotsVertical, IconClock, IconPlay, IconEdit, IconTrash, IconPlus, IconSpeaker } from '../components/Icons';
 import './Schedules.css';
 
 export const Schedules = () => {
@@ -86,7 +87,7 @@ export const Schedules = () => {
                         <h1 class="text-3xl font-bold tracking-tight">Schedules</h1>
                     </div>
                     <button aria-label="More options" class="icon-btn">
-                        <span class="emoji-icon schedule-header-icon">⋮</span>
+                        <IconDotsVertical class="schedule-header-icon" />
                     </button>
                 </header>
 
@@ -100,7 +101,7 @@ export const Schedules = () => {
 
                     {!loading && schedules.length === 0 && (
                         <div style={{textAlign:'center', color:'#9CA3AF', padding:'3rem 1rem'}}>
-                            <p style={{fontSize:'2rem', marginBottom:'0.5rem'}}>🕐</p>
+                            <div style={{display: 'flex', justifyContent: 'center', marginBottom:'0.5rem'}}><IconClock style={{ width: '32px', height: '32px' }}/></div>
                             <p>No schedules yet</p>
                             <Link to="/configure" style={{color:'#34D399', textDecoration:'underline', marginTop:'0.5rem', display:'inline-block'}}>Add First Schedule</Link>
                         </div>
@@ -127,22 +128,22 @@ export const Schedules = () => {
                                 </div>
                                 <div class="schedule-pattern-box">
                                     <div class="schedule-pattern-info">
-                                        <div class="css-icon-eq schedule-pattern-icon"><span></span><span></span><span></span></div>
+                                        <IconSpeaker class="schedule-pattern-icon" style={{ width: '16px', height: '16px' }} />
                                         <span class="schedule-pattern-text font-mono">{pattern.text}</span>
                                     </div>
                                     <span class="schedule-pattern-steps">{pattern.count} step(s)</span>
                                 </div>
                                 <div class="schedule-actions-row">
                                     <button aria-label="Test Bell" class="schedule-btn-test schedule-btn-test-primary" onClick={() => handleTest(idx)}>
-                                        <span class="emoji-icon play-icon">▶</span>
+                                        <span class="play-icon" style={{ display: 'flex' }}><IconPlay style={{ width: '18px', height: '18px' }}/></span>
                                         Test
                                     </button>
                                     <div class="schedule-action-buttons">
                                         <button aria-label="Edit Schedule" class="schedule-btn-icon" onClick={() => push(`/configure?edit=${idx}`)}>
-                                            <span class="emoji-icon">✎</span>
+                                            <IconEdit style={{ width: '20px', height: '20px' }} />
                                         </button>
                                         <button aria-label="Delete Schedule" class="schedule-btn-icon-danger" onClick={() => handleDelete(idx)}>
-                                            <span class="emoji-icon">🗑</span>
+                                            <IconTrash style={{ width: '20px', height: '20px' }} />
                                         </button>
                                     </div>
                                 </div>
@@ -153,7 +154,7 @@ export const Schedules = () => {
                 </main>
 
                 <Link to="/configure" aria-label="Add Schedule" class="schedule-fab">
-                    <span class="emoji-icon plus-icon">+</span>
+                    <IconPlus style={{ width: '32px', height: '32px' }} />
                 </Link>
 
                 <BottomNav />

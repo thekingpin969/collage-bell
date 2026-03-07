@@ -31,13 +31,18 @@ void manualOverrideLoop() {
     // Wait for stable state
     if ((millis() - _lastDebounceMs) < BUTTON_DEBOUNCE_MS) return;
 
-    // Detect falling edge (HIGH → LOW = button pressed)
-    if (reading == LOW && _btnStable == HIGH) {
-        DEBUG_PRINTLN("[BTN] Button pressed – manual ring");
-
-        if (!patternIsRunning()) {
-            patternStartManual(MANUAL_RING_DURATION_S);
+    // Detect state changes and holds
+    if (reading == LOW) {
+        // Button is currently being held
+        if (_btnStable == HIGH) {
+            DEBUG_PRINTLN("[BTN] Button pressed – starting dynamic manual ring");
         }
+        // Continuously refresh the watchdog timer (e.g., 2 seconds timeout)
+        patternStartDynamicManual(2);
+    } else if (reading == HIGH && _btnStable == LOW) {
+        // Button released
+        DEBUG_PRINTLN("[BTN] Button released – stopping manual ring");
+        patternStop();
     }
 
     _btnStable = reading;

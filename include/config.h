@@ -18,6 +18,12 @@
 #define BUTTON_PIN      27    // Manual ring push-button (INPUT_PULLUP)
 #define LED_PIN         2     // On-board LED for status
 
+// Diagnostic LEDs (external, active HIGH)
+#define WIFI_LED_PIN    16    // Blue  – WiFi connection status
+#define RTC_LED_PIN     17    // Yellow – RTC health / battery
+#define SYS_LED_PIN     18    // Green – Firmware heartbeat
+#define STATUS_LED_PIN  19    // Red   – Errors / restart / OTA
+
 // ============================================================
 // SYSTEM LIMITS
 // ============================================================
@@ -70,6 +76,15 @@ struct BellTime {
     bool enabled;                   // Is schedule active
     char label[16];                 // Optional label (max 15 chars)
     PatternStep steps[MAX_STEPS];   // Ring pattern for this schedule
+};
+
+/**
+ * @brief Global System Settings
+ * Contains global toggles and device identity
+ */
+struct SystemSettings {
+    char deviceName[32];            // Name of the bell system (e.g. "Main Building")
+    bool masterEnable;              // If false, all schedules are skipped
 };
 
 // ============================================================

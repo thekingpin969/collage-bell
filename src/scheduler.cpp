@@ -14,15 +14,17 @@
 #include "pattern_engine.h"
 
 // ---- Module-private state ----
-static BellTime*     _schedules      = nullptr;
-static uint8_t*      _scheduleCount  = nullptr;
-static unsigned long _lastCheckMs    = 0;
-static uint8_t       _lastTrigHour   = 255;  // Invalid sentinel
-static uint8_t       _lastTrigMinute = 255;
+static BellTime*       _schedules      = nullptr;
+static uint8_t*        _scheduleCount  = nullptr;
+static SystemSettings* _settings       = nullptr;
+static unsigned long   _lastCheckMs    = 0;
+static uint8_t         _lastTrigHour   = 255;  // Invalid sentinel
+static uint8_t         _lastTrigMinute = 255;
 
-void schedulerInit(BellTime* schedules, uint8_t* scheduleCount) {
+void schedulerInit(BellTime* schedules, uint8_t* scheduleCount, SystemSettings* settings) {
     _schedules     = schedules;
     _scheduleCount = scheduleCount;
+    _settings      = settings;
     _lastCheckMs   = 0;
     _lastTrigHour  = 255;
     _lastTrigMinute = 255;
@@ -35,7 +37,10 @@ void schedulerLoop() {
     if (now - _lastCheckMs < SCHEDULER_INTERVAL_MS) return;
     _lastCheckMs = now;
 
-    if (_schedules == nullptr || _scheduleCount == nullptr) return;
+    if (_schedules == nullptr || _scheduleCount == nullptr || _settings == nullptr) return;
+
+    // Master switch overrides all schedules
+    if (!_settings->masterEnable) return;
 
     // Read current time from RTC
     uint8_t curHour, curMinute, curSecond, curDow;

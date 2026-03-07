@@ -1,0 +1,239 @@
+/* ============================================================
+   LED Status Panel – Visual LED indicators on Maintenance page
+   ============================================================ */
+
+.led-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.led-grid {
+    background-color: var(--mnt-surface, #1C1C1E);
+    border-radius: 1rem;
+    padding: 1.25rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+/* Individual LED card */
+.led-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.03);
+    transition: background 0.2s;
+}
+
+.led-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+/* LED indicator dot */
+.led-dot-wrapper {
+    position: relative;
+    width: 2rem;
+    height: 2rem;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.led-dot {
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 50%;
+    transition: opacity 0.3s, box-shadow 0.3s;
+}
+
+.led-glow {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    opacity: 0.25;
+    filter: blur(6px);
+    transition: opacity 0.3s;
+}
+
+/* ---- Color variants ---- */
+
+/* Blue (WiFi) */
+.led-dot.blue {
+    background: #3B82F6;
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+}
+
+.led-glow.blue {
+    background: #3B82F6;
+}
+
+/* Yellow (RTC) */
+.led-dot.yellow {
+    background: #EAB308;
+    box-shadow: 0 0 8px rgba(234, 179, 8, 0.6);
+}
+
+.led-glow.yellow {
+    background: #EAB308;
+}
+
+/* Green (System) */
+.led-dot.green {
+    background: #22C55E;
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+}
+
+.led-glow.green {
+    background: #22C55E;
+}
+
+/* Red (Status) */
+.led-dot.red {
+    background: #EF4444;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+.led-glow.red {
+    background: #EF4444;
+}
+
+/* ---- State: OFF ---- */
+.led-dot.off {
+    opacity: 0.15;
+    box-shadow: none;
+}
+
+.led-glow.off {
+    opacity: 0;
+}
+
+/* ---- State: Blink (slow 1.5s) ---- */
+.led-dot.blink {
+    animation: led-blink 1.5s ease-in-out infinite;
+}
+
+.led-glow.blink {
+    animation: led-glow-blink 1.5s ease-in-out infinite;
+}
+
+/* ---- State: Heartbeat (1s) ---- */
+.led-dot.heartbeat {
+    animation: led-heartbeat 2s ease-in-out infinite;
+}
+
+.led-glow.heartbeat {
+    animation: led-glow-heartbeat 2s ease-in-out infinite;
+}
+
+/* ---- State: Fast blink (300ms) ---- */
+.led-dot.fast_blink {
+    animation: led-fast-blink 0.3s ease-in-out infinite;
+}
+
+.led-glow.fast_blink {
+    animation: led-glow-fast-blink 0.3s ease-in-out infinite;
+}
+
+/* ---- Animations ---- */
+
+@keyframes led-blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.15;
+    }
+}
+
+@keyframes led-glow-blink {
+
+    0%,
+    100% {
+        opacity: 0.25;
+    }
+
+    50% {
+        opacity: 0;
+    }
+}
+
+@keyframes led-heartbeat {
+
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.2;
+        transform: scale(0.85);
+    }
+}
+
+@keyframes led-glow-heartbeat {
+
+    0%,
+    100% {
+        opacity: 0.3;
+    }
+
+    50% {
+        opacity: 0;
+    }
+}
+
+@keyframes led-fast-blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.1;
+    }
+}
+
+@keyframes led-glow-fast-blink {
+
+    0%,
+    100% {
+        opacity: 0.3;
+    }
+
+    50% {
+        opacity: 0;
+    }
+}
+
+/* ---- Text ---- */
+.led-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 0;
+}
+
+.led-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--mnt-text, #F9FAFB);
+    margin: 0;
+}
+
+.led-state {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--mnt-text-muted, #9CA3AF);
+    margin: 0;
+}

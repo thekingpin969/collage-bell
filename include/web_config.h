@@ -13,11 +13,13 @@
 #include "config.h"
 
 /**
- * @brief Start Wi-Fi AP, register SPA static file routes and JSON API endpoints.
- * @param[in] schedules     Pointer to the global schedule array
- * @param[in] scheduleCount Pointer to the global schedule count
+ * @brief Start the SPA + JSON API Web Server on port 80.
+ * Sets up WiFi AP mode if not connected.
+ * @param[in] schedules     Pointer to global schedules array
+ * @param[in] scheduleCount Pointer to global schedules count
+ * @param[in] settings      Pointer to global system settings
  */
-void webConfigInit(BellTime* schedules, uint8_t* scheduleCount);
+void webConfigInit(BellTime* schedules, uint8_t* scheduleCount, SystemSettings* settings);
 
 /**
  * @brief Handle HTTP client requests. Call every loop().

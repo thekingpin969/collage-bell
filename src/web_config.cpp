@@ -28,12 +28,18 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <pgmspace.h>
+#include <Update.h>
 #include "static_files.h"
+#include "led_feedback.h"
+#include "wifi_manager.h"
 
 // ---- Module-private state ----
-static WebServer   _server(WEB_SERVER_PORT);
-static BellTime*   _schedules     = nullptr;
-static uint8_t*    _scheduleCount = nullptr;
+static WebServer       _server(WEB_SERVER_PORT);
+static BellTime*       _schedules     = nullptr;
+static uint8_t*        _scheduleCount = nullptr;
+static SystemSettings* _settings      = nullptr;
+static bool            _otaInProgress = false;
+static bool            _otaSuccess    = false;
 
 // ============================================================
 // HELPER – Send CORS headers on all API responses
@@ -129,8 +135,9 @@ static uint8_t jsonParseSteps(const String& body, PatternStep* steps, uint8_t ma
 static void handleApiStatus() {
     sendCorsHeaders();
 
-    uint8_t h, m, s, dow;
-    rtcGetTime(h, m, s, dow);
+    uint16_t y;
+    uint8_t mo, d, h, m, s;
+    rtcGetDateTime(y, mo, d, h, m, s);
 
     char timeBuf[12];
     snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d:%02d", h, m, s);
@@ -164,10 +171,18 @@ static void handleApiStatus() {
     String json = "{";
     json += "\"time\":\"" + String(timeBuf) + "\",";
     json += "\"date\":\"IST\",";
+    json += "\"year\":" + String(y) + ",";
+    json += "\"month\":" + String(mo) + ",";
+    json += "\"day\":" + String(d) + ",";
+    json += "\"hour\":" + String(h) + ",";
+    json += "\"minute\":" + String(m) + ",";
+    json += "\"second\":" + String(s) + ",";
     json += "\"nextBell\":\"" + nextBell + "\",";
     json += "\"scheduleCount\":" + String(*_scheduleCount) + ",";
     json += "\"uptime\":\"" + String(uptimeBuf) + "\",";
-    json += "\"freeHeap\":" + String(ESP.getFreeHeap() / 1024);
+    json += "\"freeHeap\":" + String(ESP.getFreeHeap() / 1024) + ",";
+    json += "\"deviceName\":\"" + String(_settings->deviceName) + "\",";
+    json += "\"masterEnable\":" + String(_settings->masterEnable ? "true" : "false");
     json += "}";
 
     _server.send(200, "application/json", json);
@@ -316,8 +331,15 @@ static void handleApiDeleteSchedule() {
 static void handleApiRing() {
     sendCorsHeaders();
 
-    if (!patternIsRunning())
-        patternStartManual(MANUAL_RING_DURATION_S);
+    String body = _server.arg("plain");
+    String state = jsonParseString(body, "state", "on");
+
+    if (state == "on") {
+        // Start or refresh dynamic manual ring with 4 second watchdog
+        patternStartDynamicManual(4);
+    } else if (state == "off") {
+        patternStop();
+    }
 
     _server.send(200, "application/json", "{\"ok\":true}");
 }
@@ -375,9 +397,36 @@ static void handleApiSetTime() {
 // POST /api/restart
 static void handleApiRestart() {
     sendCorsHeaders();
+    ledSetStatus(LED_EVT_RESTART);
     _server.send(200, "application/json", "{\"ok\":true}");
-    delay(500);
+    delay(800);  // Allow 3-blink pattern to be visible
     ESP.restart();
+}
+
+// GET /api/leds
+static void handleApiLeds() {
+    sendCorsHeaders();
+
+    LedInfo leds[4];
+    ledGetStates(leds);
+
+    String json = "{";
+    const char* keys[] = { "wifi", "rtc", "system", "status" };
+    for (int i = 0; i < 4; i++) {
+        if (i > 0) json += ",";
+        json += "\"";
+        json += keys[i];
+        json += "\":{\"label\":\"";
+        json += leds[i].label;
+        json += "\",\"color\":\"";
+        json += leds[i].color;
+        json += "\",\"state\":\"";
+        json += leds[i].state;
+        json += "\"}";
+    }
+    json += "}";
+
+    _server.send(200, "application/json", json);
 }
 
 // GET /api/system
@@ -392,7 +441,7 @@ static void handleApiSystem() {
     String json = "{";
     json += "\"uptime\":\"" + String(uptimeBuf) + "\",";
     json += "\"freeHeap\":" + String(ESP.getFreeHeap() / 1024) + ",";
-    json += "\"firmwareVersion\":\"1.0.0\"";
+    json += "\"firmwareVersion\":\"1.0.1\"";
     json += "}";
 
     _server.send(200, "application/json", json);
@@ -420,10 +469,173 @@ static void handleApiLogs() {
     _server.send(200, "application/json", json);
 }
 
+// GET /api/wifi-status
+static void handleApiWifiStatus() {
+    sendCorsHeaders();
+
+    WifiStatus s = wifiManagerGetStatus();
+    
+    String json = "{";
+    json += "\"connected\":" + String(s.connected ? "true" : "false") + ",";
+    json += "\"ip\":\"" + s.ip + "\",";
+    json += "\"ssid\":\"" + s.ssid + "\",";
+    json += "\"state\":\"" + s.state + "\",";
+    json += "\"rssi\":" + String(s.rssi) + ",";
+    json += "\"bssid\":\"" + s.bssid + "\",";
+    json += "\"channel\":" + String(s.channel);
+    json += "}";
+
+    _server.send(200, "application/json", json);
+}
+
+// POST /api/wifi-config
+static void handleApiWifiConfig() {
+    sendCorsHeaders();
+
+    String body = _server.arg("plain");
+    String ssid = jsonParseString(body, "ssid", "");
+    String password = jsonParseString(body, "password", "");
+
+    if (ssid.length() > 0) {
+        wifiManagerConnect(ssid, password);
+        _server.send(200, "application/json", "{\"ok\":true}");
+    } else {
+        _server.send(400, "application/json", "{\"error\":\"SSID cannot be empty\"}");
+    }
+}
+
+// POST /api/wifi-disconnect
+static void handleApiWifiDisconnect() {
+    sendCorsHeaders();
+    wifiManagerDisconnect();
+    _server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// GET /api/settings
+static void handleApiGetSettings() {
+    sendCorsHeaders();
+
+    String json = "{";
+    json += "\"deviceName\":\"" + String(_settings->deviceName) + "\",";
+    json += "\"masterEnable\":" + String(_settings->masterEnable ? "true" : "false");
+    json += "}";
+
+    _server.send(200, "application/json", json);
+}
+
+// POST /api/settings
+static void handleApiPostSettings() {
+    sendCorsHeaders();
+
+    String body = _server.arg("plain");
+    
+    // Parse masterEnable
+    _settings->masterEnable = jsonParseBool(body, "masterEnable", true);
+
+    // Parse deviceName
+    String newName = jsonParseString(body, "deviceName", "College Bell System");
+    strncpy(_settings->deviceName, newName.c_str(), 31);
+    _settings->deviceName[31] = '\0';
+
+    // Commit to NVS
+    storageSaveSettings(*_settings);
+
+    _server.send(200, "application/json", "{\"ok\":true}");
+}
+
 // OPTIONS handler for CORS preflight
 static void handleOptions() {
     sendCorsHeaders();
     _server.send(204);
+}
+
+// ============================================================
+// OTA FIRMWARE UPDATE
+// ============================================================
+
+// POST /api/update – completion handler (called after all chunks received)
+static void handleOtaComplete() {
+    sendCorsHeaders();
+    if (_otaSuccess) {
+        _server.send(200, "application/json", "{\"ok\":true}");
+        DEBUG_PRINTLN("[OTA] Update successful, restarting...");
+        delay(500);
+        ESP.restart();
+    } else {
+        String err = Update.errorString();
+        DEBUG_PRINTF("[OTA] Update failed: %s\n", err.c_str());
+        ledClearStatus();
+        _otaInProgress = false;
+        _server.send(500, "application/json",
+            "{\"error\":\"" + err + "\"}");
+    }
+}
+
+// POST /api/update – upload handler (called per chunk)
+static void handleOtaUpload() {
+    HTTPUpload& upload = _server.upload();
+
+    switch (upload.status) {
+        case UPLOAD_FILE_START:
+            if (_otaInProgress) {
+                DEBUG_PRINTLN("[OTA] Already in progress, rejecting");
+                return;
+            }
+            _otaInProgress = true;
+            _otaSuccess    = false;
+            ledSetStatus(LED_EVT_OTA);
+            DEBUG_PRINTF("[OTA] Starting: %s\n", upload.filename.c_str());
+
+            if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+                DEBUG_PRINTF("[OTA] Begin failed: %s\n",
+                             Update.errorString());
+                _otaInProgress = false;
+                ledClearStatus();
+            }
+            break;
+
+        case UPLOAD_FILE_WRITE:
+            if (Update.isRunning()) {
+                // Blink onboard LED (pin 2) at 250ms
+                static unsigned long lastBlinkMs = 0;
+                unsigned long now = millis();
+                if (now - lastBlinkMs >= 250) {
+                    digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+                    lastBlinkMs = now;
+                }
+                if (Update.write(upload.buf, upload.currentSize)
+                    != upload.currentSize) {
+                    DEBUG_PRINTF("[OTA] Write failed: %s\n",
+                                 Update.errorString());
+                }
+            }
+            break;
+
+        case UPLOAD_FILE_END:
+            if (Update.isRunning()) {
+                if (Update.end(true) && Update.isFinished()) {
+                    _otaSuccess = true;
+                    DEBUG_PRINTF("[OTA] Finished: %u bytes\n",
+                                 upload.totalSize);
+                } else {
+                    DEBUG_PRINTF("[OTA] End failed: %s\n",
+                                 Update.errorString());
+                }
+            }
+            _otaInProgress = false;
+            ledClearStatus();
+            digitalWrite(LED_PIN, LOW);  // Turn off onboard LED
+            break;
+
+        case UPLOAD_FILE_ABORTED:
+            Update.abort();
+            _otaInProgress = false;
+            _otaSuccess    = false;
+            ledClearStatus();
+            digitalWrite(LED_PIN, LOW);  // Turn off onboard LED
+            DEBUG_PRINTLN("[OTA] Upload aborted");
+            break;
+    }
 }
 
 // SPA fallback – serve index.html for unknown routes
@@ -445,15 +657,18 @@ static void handleNotFound() {
 // PUBLIC API
 // ============================================================
 
-void webConfigInit(BellTime* schedules, uint8_t* scheduleCount) {
+void webConfigInit(BellTime* schedules, uint8_t* scheduleCount, SystemSettings* settings) {
     _schedules     = schedules;
     _scheduleCount = scheduleCount;
+    _settings      = settings;
 
-    // Start Wi-Fi AP
+    // We no longer call WiFi.softAP here in isolation. The wifiManager handles 
+    // switching to WIFI_AP_STA mode. But we STILL want the AP to come up.
+    // So we'll call softAP here but rely on wifiManager for mode.
     WiFi.softAP(AP_SSID, AP_PASSWORD);
     DEBUG_PRINT("[WIFI] AP started: ");
     DEBUG_PRINTLN(AP_SSID);
-    DEBUG_PRINT("[WIFI] IP: ");
+    DEBUG_PRINT("[WIFI] AP IP: ");
     DEBUG_PRINTLN(WiFi.softAPIP().toString());
 
     // ---- Serve compiled SPA static files from static_files.h ----
@@ -488,6 +703,13 @@ void webConfigInit(BellTime* schedules, uint8_t* scheduleCount) {
     _server.on("/api/restart",   HTTP_POST,   handleApiRestart);
     _server.on("/api/system",    HTTP_GET,    handleApiSystem);
     _server.on("/api/logs",      HTTP_GET,    handleApiLogs);
+    _server.on("/api/leds",      HTTP_GET,    handleApiLeds);
+    _server.on("/api/wifi-status", HTTP_GET,  handleApiWifiStatus);
+    _server.on("/api/wifi-config", HTTP_POST, handleApiWifiConfig);
+    _server.on("/api/wifi-disconnect", HTTP_POST, handleApiWifiDisconnect);
+    _server.on("/api/settings",  HTTP_GET,    handleApiGetSettings);
+    _server.on("/api/settings",  HTTP_POST,   handleApiPostSettings);
+    _server.on("/api/update",    HTTP_POST,   handleOtaComplete, handleOtaUpload);
 
     // CORS preflight for all API routes
     _server.on("/api/status",    HTTP_OPTIONS, handleOptions);
@@ -498,6 +720,12 @@ void webConfigInit(BellTime* schedules, uint8_t* scheduleCount) {
     _server.on("/api/restart",   HTTP_OPTIONS, handleOptions);
     _server.on("/api/system",    HTTP_OPTIONS, handleOptions);
     _server.on("/api/logs",      HTTP_OPTIONS, handleOptions);
+    _server.on("/api/leds",      HTTP_OPTIONS, handleOptions);
+    _server.on("/api/wifi-status", HTTP_OPTIONS, handleOptions);
+    _server.on("/api/wifi-config", HTTP_OPTIONS, handleOptions);
+    _server.on("/api/wifi-disconnect", HTTP_OPTIONS, handleOptions);
+    _server.on("/api/settings",  HTTP_OPTIONS, handleOptions);
+    _server.on("/api/update",    HTTP_OPTIONS, handleOptions);
 
     // SPA fallback for client-side routing
     _server.onNotFound(handleNotFound);

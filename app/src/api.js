@@ -40,7 +40,7 @@ export const api = {
         request(`/api/schedules?idx=${idx}`, { method: 'DELETE' }),
 
     /** POST /api/ring */
-    ring: () => request('/api/ring', { method: 'POST' }),
+    ring: (data) => request('/api/ring', { method: 'POST', body: JSON.stringify(data || { state: 'on' }) }),
 
     /** POST /api/set-time */
     setTime: (data) =>
@@ -58,4 +58,74 @@ export const api = {
 
     /** GET /api/logs */
     getLogs: () => request('/api/logs'),
+
+    /** GET /api/leds */
+    getLedStatus: () => request('/api/leds'),
+
+    /** GET /api/settings */
+    getSettings: () => request('/api/settings'),
+
+    /** POST /api/settings */
+    setSettings: (data) => request('/api/settings', { method: 'POST', body: JSON.stringify(data) }),
+
+    /** GET /api/wifi-status */
+    getWifiStatus: () => request('/api/wifi-status'),
+
+    /** POST /api/wifi-config */
+    setWifiConfig: (data) =>
+        request('/api/wifi-config', { method: 'POST', body: JSON.stringify(data) }),
+
+    /** POST /api/wifi-disconnect */
+    setWifiDisconnect: () => request('/api/wifi-disconnect', { method: 'POST' }),
+
+    /** POST /api/update – OTA firmware upload with progress */
+    uploadFirmware: (file, onProgress) => new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        const formData = new FormData();
+        formData.append('firmware', file);
+        let uploadComplete = false;
+
+        xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable && onProgress) {
+                const pct = Math.round((e.loaded / e.total) * 100);
+                onProgress(pct);
+                if (pct >= 100) uploadComplete = true;
+            }
+        });
+
+        xhr.addEventListener('load', () => {
+            try {
+                const data = JSON.parse(xhr.responseText);
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve(data);
+                } else {
+                    reject(new Error(data.error || 'Update failed'));
+                }
+            } catch {
+                // ESP32 may restart before sending a parseable response
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve({ ok: true });
+                } else if (uploadComplete) {
+                    // Upload finished, ESP likely restarted
+                    resolve({ ok: true });
+                } else {
+                    reject(new Error('Update failed'));
+                }
+            }
+        });
+
+        // ESP32 restarts after successful OTA, which kills the connection.
+        // If the upload was 100% complete, treat connection drop as success.
+        xhr.addEventListener('error', () => {
+            if (uploadComplete) {
+                resolve({ ok: true });
+            } else {
+                reject(new Error('Network error during upload'));
+            }
+        });
+        xhr.addEventListener('abort', () => reject(new Error('Upload aborted')));
+
+        xhr.open('POST', `${API_BASE}/api/update`);
+        xhr.send(formData);
+    }),
 };

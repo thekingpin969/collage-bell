@@ -33,6 +33,13 @@ void patternStart(uint8_t scheduleIndex);
 void patternStartManual(uint8_t durationSec);
 
 /**
+ * @brief Start or refresh a dynamic continuous manual ring.
+ * Turns relay ON immediately. Call repeatedly to keep ringing.
+ * @param[in] keepAliveSec Maximum time to keep ringing without a refresh.
+ */
+void patternStartDynamicManual(uint8_t keepAliveSec);
+
+/**
  * @brief Test a custom bell pattern without saving it.
  * @param[in] testBell The BellTime structure containing the pattern to test.
  */

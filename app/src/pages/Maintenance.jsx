@@ -3,6 +3,8 @@ import { useState, useEffect } from 'preact/hooks';
 import { Layout } from '../components/Layout';
 import { BottomNav } from '../components/BottomNav';
 import { api } from '../api';
+import { LEDStatus } from '../components/LEDStatus';
+import { IconBell, IconSpeaker, IconWifi, IconSettings, IconClose, IconInfo, IconDotsVertical, IconSync, IconTrash, IconClipboard } from '../components/Icons';
 import './Maintenance.css';
 
 export const Maintenance = () => {
@@ -23,7 +25,7 @@ export const Maintenance = () => {
     useEffect(() => { fetchData(); }, []);
 
     const iconMap = {
-        bell: '🔔', manual: '👆', wifi: '📶', system: '⚙️', error: '❌', info: 'ℹ️'
+        bell: <IconBell />, manual: <IconSpeaker />, wifi: <IconWifi />, system: <IconSettings />, error: <IconClose />, info: <IconInfo />
     };
     const colorMap = {
         bell: 'primary', manual: 'blue', wifi: 'yellow', system: 'gray', error: 'primary', info: 'blue'
@@ -35,11 +37,13 @@ export const Maintenance = () => {
                 <header class="mnt-header">
                     <h1>Maintenance</h1>
                     <button class="mnt-header-btn" aria-label="More options">
-                        ⋮
+                        <IconDotsVertical />
                     </button>
                 </header>
 
                 <main class="mnt-main">
+                    <LEDStatus />
+
                     <section class="mnt-section">
                         <h2 class="mnt-section-title">System Info</h2>
                         <div class="mnt-card">
@@ -54,38 +58,19 @@ export const Maintenance = () => {
                         </div>
                     </section>
 
-                    <section class="mnt-section">
-                        <h2 class="mnt-section-title">Firmware Update</h2>
-                        <div class="mnt-card">
-                            <div class="mnt-upload-box">
-                                <span class="mnt-upload-icon">☁️</span>
-                                <div>
-                                    <p class="mnt-upload-text">Select firmware file</p>
-                                    <p class="mnt-upload-subtext">.bin files only</p>
-                                </div>
-                                <div class="mnt-upload-btn">
-                                    Browse Files
-                                </div>
-                                <input type="file" accept=".bin" class="mnt-file-input" aria-label="Upload Firmware" />
-                            </div>
-                            
-                            <button type="button" class="mnt-update-btn">
-                                <span style={{ fontSize: '18px' }}>⬇️</span>
-                                Start Update
-                            </button>
-                        </div>
-                    </section>
+
+
 
                     <section class="mnt-section">
                         <div class="mnt-section-header">
                             <h2 class="mnt-section-title">Recent Logs</h2>
                             <div class="mnt-header-actions">
                                 <button class="mnt-action-btn refresh" onClick={fetchData}>
-                                    <span style={{ fontSize: '16px' }}>🔄</span>
+                                    <IconSync style={{ width: '16px', height: '16px' }} />
                                     Refresh
                                 </button>
                                 <button class="mnt-action-btn clear">
-                                    <span style={{ fontSize: '16px' }}>🗑️</span>
+                                    <IconTrash style={{ width: '16px', height: '16px' }} />
                                     Clear
                                 </button>
                             </div>
@@ -100,7 +85,7 @@ export const Maintenance = () => {
                                 {logs.map((log, idx) => (
                                     <div class="mnt-log-item" key={idx}>
                                         <div class={`mnt-log-icon-wrapper ${colorMap[log.type] || 'gray'}`}>
-                                            {iconMap[log.type] || '📋'}
+                                            {iconMap[log.type] || <IconClipboard />}
                                         </div>
                                         <div class="mnt-log-content">
                                             <p class="mnt-log-title">{log.title}</p>
