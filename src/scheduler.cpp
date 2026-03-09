@@ -12,6 +12,7 @@
 #include "scheduler.h"
 #include "rtc_service.h"
 #include "pattern_engine.h"
+#include "mqtt_manager.h"
 
 // ---- Module-private state ----
 static BellTime*       _schedules      = nullptr;
@@ -78,6 +79,8 @@ void schedulerLoop() {
             DEBUG_PRINTF("[SCHED] Matched schedule #%d at %02d:%02d\n",
                          i, curHour, curMinute);
             patternStart(i);
+            mqttIncrementBellRings();
+            publishStatus();
             _lastTrigHour   = curHour;
             _lastTrigMinute = curMinute;
             return;  // Only trigger first match per minute

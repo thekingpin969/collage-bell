@@ -16,11 +16,12 @@
 // ============================================================
 #define RELAY_PIN       26    // Relay control (active LOW)
 #define BUTTON_PIN      27    // Manual ring push-button (INPUT_PULLUP)
+#define RESET_BTN_PIN   32    // System reset/restart push-button (INPUT_PULLUP)
 #define LED_PIN         2     // On-board LED for status
 
 // Diagnostic LEDs (external, active HIGH)
 #define WIFI_LED_PIN    16    // Blue  – WiFi connection status
-#define RTC_LED_PIN     17    // Yellow – RTC health / battery
+#define RTC_LED_PIN     14    // Yellow – RTC health / battery
 #define SYS_LED_PIN     18    // Green – Firmware heartbeat
 #define STATUS_LED_PIN  19    // Red   – Errors / restart / OTA
 
@@ -29,6 +30,7 @@
 // ============================================================
 #define MAX_SCHEDULES   50    // Maximum bell schedule entries
 #define MAX_STEPS       5     // Maximum pattern steps per schedule
+#define FIRMWARE_VERSION "1.0.1" // Current firmware version (update on each release)
 
 // ============================================================
 // TIMING CONSTANTS
@@ -41,9 +43,10 @@
 // ============================================================
 // WI-FI ACCESS POINT
 // ============================================================
-#define AP_SSID         "CollegeBell"
-#define AP_PASSWORD     ""              // Open network (no password)
-#define WEB_SERVER_PORT 80
+#define AP_SSID_DEFAULT     "collage bell"
+#define AP_PASSWORD_DEFAULT "ringthebell"
+#define DNS_PORT            53
+#define WEB_SERVER_PORT     80
 
 // ============================================================
 // DATA STRUCTURES
@@ -85,6 +88,7 @@ struct BellTime {
 struct SystemSettings {
     char deviceName[32];            // Name of the bell system (e.g. "Main Building")
     bool masterEnable;              // If false, all schedules are skipped
+    bool isRegistered;              // Has the server acknowledged registration via MQTT
 };
 
 // ============================================================

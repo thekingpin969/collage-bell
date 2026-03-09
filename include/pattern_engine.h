@@ -46,6 +46,13 @@ void patternStartDynamicManual(uint8_t keepAliveSec);
 void patternStartTest(const BellTime& testBell);
 
 /**
+ * @brief Execute a raw array of PatternSteps immediately (Used by MQTT remote triggers).
+ * @param[in] steps Array of PatternStep actions
+ * @param[in] count Number of steps in the array
+ */
+void patternExecuteManual(const PatternStep* steps, uint8_t count);
+
+/**
  * @brief Advance the pattern state machine. Call every loop().
  * Uses millis() to track elapsed time – never blocks.
  */

@@ -27,19 +27,25 @@
 #include "pattern_engine.h"
 #include <WiFi.h>
 #include <WebServer.h>
+#include <DNSServer.h>
 #include <pgmspace.h>
 #include <Update.h>
 #include "static_files.h"
 #include "led_feedback.h"
 #include "wifi_manager.h"
+#include "mqtt_manager.h"
+#include <ArduinoJson.h>
 
 // ---- Module-private state ----
 static WebServer       _server(WEB_SERVER_PORT);
+static DNSServer       _dnsServer;
 static BellTime*       _schedules     = nullptr;
 static uint8_t*        _scheduleCount = nullptr;
 static SystemSettings* _settings      = nullptr;
 static bool            _otaInProgress = false;
 static bool            _otaSuccess    = false;
+static String          _currentApSsid;
+static String          _currentApPass;
 
 // ============================================================
 // HELPER – Send CORS headers on all API responses
@@ -254,6 +260,9 @@ static void handleApiAddSchedule() {
     DEBUG_PRINTF("[WEB] Added schedule: %02d:%02d (%d steps)\n",
                  newEntry.hour, newEntry.minute, newEntry.stepCount);
 
+    // Notify server of schedule change
+    publishStatus();
+
     _server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -299,6 +308,9 @@ static void handleApiEditSchedule() {
     DEBUG_PRINTF("[WEB] Edited schedule idx %d: %02d:%02d\n",
                  idx, editEntry.hour, editEntry.minute);
 
+    // Notify server of schedule change
+    publishStatus();
+
     _server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -323,6 +335,9 @@ static void handleApiDeleteSchedule() {
     storageSaveSchedules(_schedules, *_scheduleCount);
 
     DEBUG_PRINTF("[WEB] Deleted idx %d, %d remaining\n", idx, *_scheduleCount);
+
+    // Notify server of schedule change
+    publishStatus();
 
     _server.send(200, "application/json", "{\"ok\":true}");
 }
@@ -429,6 +444,14 @@ static void handleApiLeds() {
     _server.send(200, "application/json", json);
 }
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+uint8_t temprature_sens_read();
+#ifdef __cplusplus
+}
+#endif
+
 // GET /api/system
 static void handleApiSystem() {
     sendCorsHeaders();
@@ -438,10 +461,16 @@ static void handleApiSystem() {
     snprintf(uptimeBuf, sizeof(uptimeBuf), "%luh %02lum %02lus",
              uptimeSec / 3600, (uptimeSec % 3600) / 60, uptimeSec % 60);
 
+    uint8_t rawTemp = temprature_sens_read();
+    String tempStr = (rawTemp == 128 || rawTemp == 0) ? "null" : String((rawTemp - 32.0) / 1.8, 1);
+
     String json = "{";
     json += "\"uptime\":\"" + String(uptimeBuf) + "\",";
     json += "\"freeHeap\":" + String(ESP.getFreeHeap() / 1024) + ",";
-    json += "\"firmwareVersion\":\"1.0.1\"";
+    json += "\"firmwareVersion\":\"" + String(FIRMWARE_VERSION) + "\",";
+    json += "\"temperature\":" + tempStr + ",";
+    json += "\"mqttConnected\":" + String(mqttIsConnected() ? "true" : "false") + ",";
+    json += "\"deviceId\":\"" + getDeviceId() + "\"";
     json += "}";
 
     _server.send(200, "application/json", json);
@@ -460,7 +489,7 @@ static void handleApiLogs() {
     String json = "[";
     json += "{\"type\":\"system\",\"title\":\"System Ready\",\"time\":\"Uptime: " + String(uptimeBuf) + "\"},";
     json += "{\"type\":\"info\",\"title\":\"Free Heap\",\"time\":\"" + String(ESP.getFreeHeap() / 1024) + " KB available\"},";
-    json += "{\"type\":\"wifi\",\"title\":\"WiFi AP Active\",\"time\":\"SSID: " + String(AP_SSID) + "\"}";
+    json += "{\"type\":\"wifi\",\"title\":\"WiFi AP Active\",\"time\":\"SSID: " + _currentApSsid + "\"}";
     if (*_scheduleCount > 0) {
         json += ",{\"type\":\"bell\",\"title\":\"Schedules Loaded\",\"time\":\"" + String(*_scheduleCount) + " schedule(s) active\"}";
     }
@@ -517,7 +546,8 @@ static void handleApiGetSettings() {
 
     String json = "{";
     json += "\"deviceName\":\"" + String(_settings->deviceName) + "\",";
-    json += "\"masterEnable\":" + String(_settings->masterEnable ? "true" : "false");
+    json += "\"masterEnable\":" + String(_settings->masterEnable ? "true" : "false") + ",";
+    json += "\"isRegistered\":" + String(_settings->isRegistered ? "true" : "false");
     json += "}";
 
     _server.send(200, "application/json", json);
@@ -529,24 +559,99 @@ static void handleApiPostSettings() {
 
     String body = _server.arg("plain");
     
+    StaticJsonDocument<512> doc;
+    DeserializationError error = deserializeJson(doc, body);
+    if (error) {
+        _server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+        return;
+    }
+
     // Parse masterEnable
-    _settings->masterEnable = jsonParseBool(body, "masterEnable", true);
+    if (doc.containsKey("masterEnable")) {
+        _settings->masterEnable = doc["masterEnable"].as<bool>();
+    }
 
     // Parse deviceName
-    String newName = jsonParseString(body, "deviceName", "College Bell System");
-    strncpy(_settings->deviceName, newName.c_str(), 31);
-    _settings->deviceName[31] = '\0';
+    if (doc.containsKey("deviceName")) {
+        const char* newName = doc["deviceName"];
+        strncpy(_settings->deviceName, newName, 31);
+        _settings->deviceName[31] = '\0';
+    }
 
     // Commit to NVS
     storageSaveSettings(*_settings);
 
+    // Broadcast new state to Admin UI over MQTT immediately
+    publishStatus();
+
     _server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// GET /api/ap-config
+static void handleApiGetApConfig() {
+    sendCorsHeaders();
+    String json = "{";
+    json += "\"ssid\":\"" + _currentApSsid + "\",";
+    json += "\"password\":\"" + _currentApPass + "\"";
+    json += "}";
+    _server.send(200, "application/json", json);
+}
+
+// POST /api/ap-config
+static void handleApiPostApConfig() {
+    sendCorsHeaders();
+
+    String body = _server.arg("plain");
+    String ssid = jsonParseString(body, "ssid", AP_SSID_DEFAULT);
+    String password = jsonParseString(body, "password", AP_PASSWORD_DEFAULT);
+
+    storageSaveApConfig(ssid, password);
+
+    _server.send(200, "application/json", "{\"ok\":true}");
+    
+    // Restart to apply new AP credentials
+    delay(500);
+    ESP.restart();
 }
 
 // OPTIONS handler for CORS preflight
 static void handleOptions() {
     sendCorsHeaders();
     _server.send(204);
+}
+
+// GET /api/server-url
+static void handleApiGetServerUrl() {
+    sendCorsHeaders();
+    String url;
+    storageLoadServerUrl(url);
+    String json = "{\"url\":\"" + url + "\"}";
+    _server.send(200, "application/json", json);
+}
+
+// POST /api/server-url
+static void handleApiPostServerUrl() {
+    sendCorsHeaders();
+    String body = _server.arg("plain");
+    String url = jsonParseString(body, "url", "");
+    storageSaveServerUrl(url);
+    
+    // Reload into MQTT manager memory and try sending a status immediately
+    mqttReloadServerUrl();
+    publishStatus();
+    
+    _server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// POST /api/register
+static void handleApiRegister() {
+    sendCorsHeaders();
+    String body = _server.arg("plain");
+    String deviceName = jsonParseString(body, "deviceName", "College Bell System");
+    
+    mqttRegisterDevice(deviceName.c_str());
+    
+    _server.send(200, "application/json", "{\"ok\":true}");
 }
 
 // ============================================================
@@ -646,6 +751,13 @@ static void handleNotFound() {
         _server.send(404, "application/json", "{\"error\":\"Not found\"}");
         return;
     }
+    // Captive portal redirect
+    if (_server.hostHeader() != WiFi.softAPIP().toString() && _server.hostHeader() != "localhost") {
+        _server.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + "/", true);
+        _server.send(302, "text/plain", "");
+        return;
+    }
+
     // For all other routes, serve index.html so SPA routing works
     _server.sendHeader("Content-Encoding", "gzip");
     _server.send_P(200, "text/html",
@@ -665,11 +777,15 @@ void webConfigInit(BellTime* schedules, uint8_t* scheduleCount, SystemSettings* 
     // We no longer call WiFi.softAP here in isolation. The wifiManager handles 
     // switching to WIFI_AP_STA mode. But we STILL want the AP to come up.
     // So we'll call softAP here but rely on wifiManager for mode.
-    WiFi.softAP(AP_SSID, AP_PASSWORD);
+    storageLoadApConfig(_currentApSsid, _currentApPass);
+    WiFi.softAP(_currentApSsid.c_str(), _currentApPass.c_str(), 1, 0, 3);
     DEBUG_PRINT("[WIFI] AP started: ");
-    DEBUG_PRINTLN(AP_SSID);
+    DEBUG_PRINTLN(_currentApSsid);
     DEBUG_PRINT("[WIFI] AP IP: ");
     DEBUG_PRINTLN(WiFi.softAPIP().toString());
+
+    _dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
+    DEBUG_PRINTLN("[DNS] Captive portal DNS started on port 53");
 
     // ---- Serve compiled SPA static files from static_files.h ----
     // Loop over all compiled assets and register a route for each
@@ -709,6 +825,11 @@ void webConfigInit(BellTime* schedules, uint8_t* scheduleCount, SystemSettings* 
     _server.on("/api/wifi-disconnect", HTTP_POST, handleApiWifiDisconnect);
     _server.on("/api/settings",  HTTP_GET,    handleApiGetSettings);
     _server.on("/api/settings",  HTTP_POST,   handleApiPostSettings);
+    _server.on("/api/ap-config", HTTP_GET,    handleApiGetApConfig);
+    _server.on("/api/ap-config", HTTP_POST,   handleApiPostApConfig);
+    _server.on("/api/register",  HTTP_POST,   handleApiRegister);
+    _server.on("/api/server-url",HTTP_GET,    handleApiGetServerUrl);
+    _server.on("/api/server-url",HTTP_POST,   handleApiPostServerUrl);
     _server.on("/api/update",    HTTP_POST,   handleOtaComplete, handleOtaUpload);
 
     // CORS preflight for all API routes
@@ -725,6 +846,9 @@ void webConfigInit(BellTime* schedules, uint8_t* scheduleCount, SystemSettings* 
     _server.on("/api/wifi-config", HTTP_OPTIONS, handleOptions);
     _server.on("/api/wifi-disconnect", HTTP_OPTIONS, handleOptions);
     _server.on("/api/settings",  HTTP_OPTIONS, handleOptions);
+    _server.on("/api/ap-config", HTTP_OPTIONS, handleOptions);
+    _server.on("/api/register",  HTTP_OPTIONS, handleOptions);
+    _server.on("/api/server-url",HTTP_OPTIONS, handleOptions);
     _server.on("/api/update",    HTTP_OPTIONS, handleOptions);
 
     // SPA fallback for client-side routing
@@ -735,5 +859,6 @@ void webConfigInit(BellTime* schedules, uint8_t* scheduleCount, SystemSettings* 
 }
 
 void webConfigLoop() {
+    _dnsServer.processNextRequest();
     _server.handleClient();
 }

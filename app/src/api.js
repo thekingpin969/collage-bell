@@ -62,6 +62,9 @@ export const api = {
     /** GET /api/leds */
     getLedStatus: () => request('/api/leds'),
 
+    /** POST /api/register */
+    registerDevice: (data) => request('/api/register', { method: 'POST', body: JSON.stringify(data) }),
+
     /** GET /api/settings */
     getSettings: () => request('/api/settings'),
 
@@ -77,6 +80,12 @@ export const api = {
 
     /** POST /api/wifi-disconnect */
     setWifiDisconnect: () => request('/api/wifi-disconnect', { method: 'POST' }),
+
+    /** GET /api/ap-config */
+    getApConfig: () => request('/api/ap-config'),
+
+    /** POST /api/ap-config */
+    setApConfig: (data) => request('/api/ap-config', { method: 'POST', body: JSON.stringify(data) }),
 
     /** POST /api/update – OTA firmware upload with progress */
     uploadFirmware: (file, onProgress) => new Promise((resolve, reject) => {

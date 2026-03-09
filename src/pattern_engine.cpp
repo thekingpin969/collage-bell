@@ -120,6 +120,31 @@ void patternStartTest(const BellTime& testBell) {
     DEBUG_PRINTF("[PATTERN] Testing pattern (%d steps)\n", testBell.stepCount);
 }
 
+void patternExecuteManual(const PatternStep* steps, uint8_t count) {
+    if (_running) return;
+    if (count == 0 || count > MAX_STEPS) return;
+
+    _manualBell.hour = 0;
+    _manualBell.minute = 0;
+    _manualBell.stepCount = count;
+    
+    for (uint8_t i = 0; i < count; i++) {
+        _manualBell.steps[i] = steps[i];
+    }
+
+    _useManual = true;
+    _dynamicManual = false;
+    _stepIdx = 0;
+    _running = true;
+    _stepStartMs = millis();
+    
+    if (_manualBell.steps[0].duration > 0) {
+        relayON();
+    }
+    
+    DEBUG_PRINTF("[PATTERN] Remote manual trigger started (%d steps)\n", count);
+}
+
 void patternLoop() {
     if (!_running) return;
 

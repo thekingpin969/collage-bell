@@ -21,6 +21,16 @@ export const Settings = () => {
     const [masterEnable, setMasterEnable] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
 
+    const [apSsid, setApSsid] = useState('');
+    const [apPass, setApPass] = useState('');
+    const [isApSaving, setIsApSaving] = useState(false);
+
+    // Registration state
+    const [deviceId, setDeviceId] = useState('Loading...');
+    const [isRegistered, setIsRegistered] = useState(false);
+    const [registerNameInput, setRegisterNameInput] = useState('');
+    const [isRegistering, setIsRegistering] = useState(false);
+
     // OTA state
     const [fwFile, setFwFile] = useState(null);
     const [fwProgress, setFwProgress] = useState(0);
@@ -44,9 +54,25 @@ export const Settings = () => {
             })
             .catch(() => {});
 
+        api.getApConfig()
+            .then(data => {
+                if (data.ssid) setApSsid(data.ssid);
+                if (data.password !== undefined) setApPass(data.password);
+            })
+            .catch(() => {});
+
         api.getSystemInfo()
             .then(data => {
                 if (data.firmwareVersion) setFwVersion(data.firmwareVersion);
+                if (data.deviceId) setDeviceId(data.deviceId);
+            })
+            .catch(() => {});
+
+        api.getSettings()
+            .then(data => {
+                if (data.deviceName) setDeviceName(data.deviceName);
+                if (data.masterEnable !== undefined) setMasterEnable(data.masterEnable);
+                if (data.isRegistered !== undefined) setIsRegistered(data.isRegistered);
             })
             .catch(() => {});
             
@@ -119,6 +145,41 @@ export const Settings = () => {
             .then(() => alert('Settings saved successfully!'))
             .catch(() => alert('Failed to save settings'))
             .finally(() => setIsSaving(false));
+    };
+
+    const handleSaveApSettings = () => {
+        if (!apSsid) {
+            alert('AP SSID cannot be empty');
+            return;
+        }
+        if (apPass.length > 0 && apPass.length < 8) {
+            alert('AP Password must be at least 8 characters (or empty for open)');
+            return;
+        }
+        if (!confirm('Saving AP settings will restart the device. You will need to reconnect to the new WiFi network. Continue?')) {
+            return;
+        }
+        setIsApSaving(true);
+        api.setApConfig({ ssid: apSsid, password: apPass })
+            .then(() => alert('AP Settings saved! Device is restarting...'))
+            .catch(() => alert('Failed to save AP settings'))
+            .finally(() => setIsApSaving(false));
+    };
+
+    const handleRegister = () => {
+        if (!registerNameInput) {
+            alert('Please enter a name for this device.');
+            return;
+        }
+        setIsRegistering(true);
+        api.registerDevice({ deviceName: registerNameInput })
+            .then(() => {
+                alert('Device successfully registered to cloud!');
+                setIsRegistered(true);
+                setDeviceName(registerNameInput);
+            })
+            .catch(() => alert('Registration failed. Are you connected to WiFi?'))
+            .finally(() => setIsRegistering(false));
     };
 
     const handleFirmwareUpload = () => {
@@ -218,7 +279,7 @@ export const Settings = () => {
                             </div>
                             
                             {wifiStatus.connected && (
-                                <div class="settings-card-item" style={{ background: 'rgba(255, 255, 255, 0.02)' }}>
+                                <div class="settings-card-item bg-glass-light">
                                     <div class="settings-item-info">
                                         <p class="settings-item-subtitle" style={{ color: '#fff' }}>Connection Details</p>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem' }}>
@@ -266,17 +327,92 @@ export const Settings = () => {
                             </div>
                             
                             {wifiStatus.connected ? (
-                                <div class="settings-card-item clickable" onClick={handleWifiDisconnect} style={{ justifyContent: 'center', background: 'rgba(239, 68, 68, 0.1)' }}>
-                                    <p class="settings-item-title" style={{ color: '#ef4444', margin: 0 }}>
+                                <div class="settings-card-item clickable bg-glass-red" onClick={handleWifiDisconnect} style={{ justifyContent: 'center' }}>
+                                    <p class="settings-item-title text-red" style={{ margin: 0 }}>
                                         {isConnecting ? 'Disconnecting...' : 'Disconnect'}
                                     </p>
                                 </div>
                             ) : (
-                                <div class="settings-card-item clickable" onClick={handleWifiConnect} style={{ justifyContent: 'center', background: 'rgba(52, 211, 153, 0.1)' }}>
-                                    <p class="settings-item-title" style={{ color: '#34d399', margin: 0 }}>
+                                <div class="settings-card-item clickable bg-glass-green" onClick={handleWifiConnect} style={{ justifyContent: 'center' }}>
+                                    <p class="settings-item-title text-green" style={{ margin: 0 }}>
                                         {isConnecting ? 'Connecting...' : 'Connect to WiFi'}
                                     </p>
                                 </div>
+                            )}
+                        </div>
+                    </section>
+                    
+                    <section class="settings-section">
+                        <h2 class="settings-section-title">Access Point Settings</h2>
+                        <div class="settings-card">
+                            <div class="settings-input-group">
+                                <label class="settings-label">AP Name (SSID)</label>
+                                <input 
+                                    type="text" 
+                                    class="settings-input" 
+                                    placeholder="e.g. collage bell" 
+                                    value={apSsid} 
+                                    onInput={(e) => setApSsid(e.target.value)} 
+                                />
+                            </div>
+                            <div class="settings-input-group">
+                                <label class="settings-label">AP Password</label>
+                                <input 
+                                    type="text" 
+                                    class="settings-input" 
+                                    placeholder="Leave empty for Open network (min 8 chars)" 
+                                    value={apPass} 
+                                    onInput={(e) => setApPass(e.target.value)} 
+                                />
+                            </div>
+                            <div class="settings-card-item clickable bg-glass-green" onClick={handleSaveApSettings} style={{ justifyContent: 'center' }}>
+                                <p class="settings-item-title text-green" style={{ margin: 0 }}>
+                                    {isApSaving ? 'Saving & Restarting...' : 'Save AP Settings'}
+                                </p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="settings-section">
+                        <h2 class="settings-section-title">Cloud Integration</h2>
+                        <div class="settings-card">
+                            <div class="settings-card-item">
+                                <div class="settings-item-info">
+                                    <p class="settings-item-title">Device ID</p>
+                                    <p class="settings-item-subtitle" style={{ fontFamily: 'monospace' }}>{deviceId}</p>
+                                </div>
+                            </div>
+                            
+                            <div class="settings-card-item">
+                                <div class="settings-item-info">
+                                    <p class="settings-item-title">Registration Status</p>
+                                    <p class={`settings-item-subtitle ${isRegistered ? 'primary' : ''}`} style={{ color: isRegistered ? '#10b981' : '#eab308' }}>
+                                        {isRegistered ? 'Registered' : 'Unregistered'}
+                                    </p>
+                                </div>
+                                <div style={{ color: isRegistered ? '#10b981' : '#eab308' }}>
+                                    {isRegistered ? <IconCheck /> : <IconDotsVertical />}
+                                </div>
+                            </div>
+
+                            {!isRegistered && (
+                                <>
+                                    <div class="settings-input-group">
+                                        <label class="settings-label">Location / Device Name</label>
+                                        <input 
+                                            type="text" 
+                                            class="settings-input" 
+                                            placeholder="e.g. Main Hall" 
+                                            value={registerNameInput} 
+                                            onInput={(e) => setRegisterNameInput(e.target.value)} 
+                                        />
+                                    </div>
+                                    <div class="settings-card-item clickable bg-glass-indigo" onClick={handleRegister} style={{ justifyContent: 'center' }}>
+                                        <p class="settings-item-title text-indigo" style={{ margin: 0 }}>
+                                            {isRegistering ? 'Registering...' : 'Register Device'}
+                                        </p>
+                                    </div>
+                                </>
                             )}
                         </div>
                     </section>
@@ -350,7 +486,7 @@ export const Settings = () => {
                             </div>
 
                             {fwFile && (
-                                <div class="settings-card-item" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                                <div class="settings-card-item bg-glass-light">
                                     <div class="settings-item-info">
                                         <p class="settings-item-subtitle" style={{ color: '#d1d5db' }}>
                                             {fwFile.name} — {(fwFile.size / 1024).toFixed(1)} KB
@@ -375,16 +511,15 @@ export const Settings = () => {
                             )}
 
                             <div
-                                class={`settings-card-item clickable ${isUploading || !fwFile ? 'disabled' : ''}`}
+                                class={`settings-card-item clickable ${isUploading || !fwFile ? 'disabled' : ''} ${isUploading ? 'bg-glass-yellow' : 'bg-glass-indigo'}`}
                                 onClick={!isUploading && fwFile ? handleFirmwareUpload : undefined}
                                 style={{
                                     justifyContent: 'center',
-                                    background: isUploading ? 'rgba(234,179,8,0.1)' : 'rgba(99,102,241,0.1)',
                                     pointerEvents: isUploading || !fwFile ? 'none' : 'auto',
                                     opacity: isUploading || !fwFile ? 0.5 : 1
                                 }}
                             >
-                                <p class="settings-item-title" style={{ color: isUploading ? '#eab308' : '#818cf8', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <p class={`settings-item-title ${isUploading ? 'text-yellow' : 'text-indigo'}`} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <IconPackage style={{ width: '20px', height: '20px' }} /> {isUploading ? 'Updating...' : 'Upload Firmware'}
                                 </p>
                             </div>

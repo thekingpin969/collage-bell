@@ -8,7 +8,7 @@ import { IconBell, IconSpeaker, IconWifi, IconSettings, IconClose, IconInfo, Ico
 import './Maintenance.css';
 
 export const Maintenance = () => {
-    const [sysInfo, setSysInfo] = useState({ uptime: '...', freeHeap: '...' });
+    const [sysInfo, setSysInfo] = useState({ uptime: '...', freeHeap: '...', temperature: undefined, mqttConnected: undefined });
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -55,6 +55,26 @@ export const Maintenance = () => {
                                 <span style={{color:'#9CA3AF'}}>Free Heap</span>
                                 <span style={{color:'#34D399', fontWeight:600}}>{sysInfo.freeHeap} KB</span>
                             </div>
+                            {sysInfo.temperature !== undefined && (
+                            <div style={{display:'flex', justifyContent:'space-between', padding:'0.75rem 0', borderTop:'1px solid rgba(255,255,255,0.05)'}}>
+                                <span style={{color:'#9CA3AF'}}>Internal Temp</span>
+                                {sysInfo.temperature !== null ? (
+                                    <span style={{color:'#34D399', fontWeight:600}}>{sysInfo.temperature} &deg;C</span>
+                                ) : (
+                                    <span style={{color:'#EF4444', fontWeight:600}}>Not available</span>
+                                )}
+                            </div>
+                            )}
+                            {sysInfo.mqttConnected !== undefined && (
+                            <div style={{display:'flex', justifyContent:'space-between', padding:'0.75rem 0', borderTop:'1px solid rgba(255,255,255,0.05)'}}>
+                                <span style={{color:'#9CA3AF'}}>MQTT Broker</span>
+                                {sysInfo.mqttConnected ? (
+                                    <span style={{color:'#34D399', fontWeight:600}}>Connected</span>
+                                ) : (
+                                    <span style={{color:'#EF4444', fontWeight:600}}>Disconnected</span>
+                                )}
+                            </div>
+                            )}
                         </div>
                     </section>
 

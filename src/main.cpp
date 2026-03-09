@@ -30,6 +30,7 @@
 #include "web_config.h"
 #include "led_feedback.h"
 #include "wifi_manager.h"
+#include "mqtt_manager.h"
 
 // ============================================================
 // GLOBAL RUNTIME DATA (static, no heap)
@@ -89,6 +90,10 @@ void setup() {
     // Start after AP has been set up in web_config
     wifiManagerInit();
 
+    // --- 10. MQTT Manager init ---
+    mqttManagerInit(&g_settings);
+    mqttSetScheduleInfo(g_schedules, &g_scheduleCount);
+
     DEBUG_PRINTLN("[BOOT] System ready");
     DEBUG_PRINTLN("================================");
 }
@@ -103,4 +108,5 @@ void loop() {
     manualOverrideLoop();   // Check push-button
     ledLoop();              // Update diagnostic LEDs
     wifiManagerLoop();      // Handle STA WiFi connections
+    mqttManagerLoop();      // Process incoming MQTT commands and handle OTA
 }

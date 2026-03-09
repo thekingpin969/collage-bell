@@ -18,6 +18,7 @@ export const Dashboard = () => {
     const [scheduleCount, setScheduleCount] = useState(0);
     const [ringing, setRinging] = useState(false);
     const [isSheetOpen, setIsSheetOpen] = useState(false);
+    const [masterEnable, setMasterEnable] = useState(true);
     const timeOffsetRef = useRef(0);
 
     useEffect(() => {
@@ -55,6 +56,7 @@ export const Dashboard = () => {
                 .then(data => {
                     if (data.nextBell) setNextBell(data.nextBell);
                     if (data.scheduleCount !== undefined) setScheduleCount(data.scheduleCount);
+                    if (data.masterEnable !== undefined) setMasterEnable(data.masterEnable);
                     if (data.year !== undefined) {
                         const espDate = new Date(data.year, data.month - 1, data.day, data.hour, data.minute, data.second);
                         timeOffsetRef.current = espDate.getTime() - Date.now();
@@ -166,7 +168,11 @@ export const Dashboard = () => {
                     <div class="db-card">
                         <div class="db-card-header">
                             <h2>System Status</h2>
-                            <span class="db-badge">Online &amp; Idle</span>
+                            {masterEnable ? (
+                                <span class="db-badge">Online &amp; Idle</span>
+                            ) : (
+                                <span class="db-badge" style={{ backgroundColor: '#fee2e2', color: '#dc2626' }}>DISABLED</span>
+                            )}
                         </div>
                         
                         <div class="db-card-grid">
@@ -220,9 +226,16 @@ export const Dashboard = () => {
 
                 <div class="db-fab-container">
                     <button 
-                        onClick={() => setIsSheetOpen(true)}
+                        onClick={() => {
+                            if (!masterEnable) {
+                                alert("Device is currently disabled by Admin and cannot be triggered manually.");
+                                return;
+                            }
+                            setIsSheetOpen(true);
+                        }}
                         aria-label="Open Manual Ring" 
                         class="db-fab-btn" 
+                        style={!masterEnable ? { opacity: 0.5, cursor: 'not-allowed', filter: 'grayscale(100%)' } : {}}
                     >
                         <IconBell style={{ width: '28px', height: '28px' }} />
                     </button>

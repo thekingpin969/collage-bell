@@ -39,6 +39,12 @@ void rtcGetDateTime(uint16_t &year, uint8_t &month, uint8_t &day,
                     uint8_t &hour, uint8_t &minute, uint8_t &second);
 
 /**
+ * @brief Get the current time as a Unix epoch timestamp.
+ * @return uint32_t Unix timestamp
+ */
+uint32_t rtcGetUnixTime();
+
+/**
  * @brief Set the RTC to a specific date/time (admin request).
  * @return true on success.
  */

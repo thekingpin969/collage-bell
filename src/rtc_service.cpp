@@ -46,6 +46,10 @@ void rtcGetDateTime(uint16_t &year, uint8_t &month, uint8_t &day,
     second = now.second();
 }
 
+uint32_t rtcGetUnixTime() {
+    return _rtc.now().unixtime();
+}
+
 bool rtcSetTime(uint16_t year, uint8_t month, uint8_t day,
                 uint8_t hour, uint8_t minute, uint8_t second) {
     _rtc.adjust(DateTime(year, month, day, hour, minute, second));
